@@ -1,0 +1,27 @@
+# Bauplan für Render: New → Blueprint → dieses Repository wählen.
+#
+# Ein Dienst genügt – der Node-Server liefert API und PWA unter derselben Adresse aus.
+# Die Daten liegen dauerhaft in einer externen Postgres-Datenbank (z. B. Neon, kostenlos),
+# weil das Dateisystem im kostenlosen Render-Plan bei jedem Neustart gelöscht wird.
+services:
+  - type: web
+    name: dakle-ranking
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Verbindungsadresse der Datenbank, z. B. von Neon:
+      # postgresql://benutzer:passwort@ep-xyz.eu-central-1.aws.neon.tech/neondb?sslmode=require
+      # `sync: false` heißt: Render fragt den Wert beim Anlegen ab und legt ihn nicht im Repository ab.
+      - key: DATABASE_URL
+        sync: false
+      # Optional: Name des Profils, das die Städte bearbeiten darf (leer = ältestes Profil).
+      - key: ADMIN
+        sync: false

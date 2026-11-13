@@ -1,0 +1,18 @@
+{
+  "name": "dakle-ranking",
+  "version": "1.0.0",
+  "description": "dakle-Ranking – PWA: tjedne etape po gradovima s poretkom bodova",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "icons": "node scripts/make-icons.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
+}

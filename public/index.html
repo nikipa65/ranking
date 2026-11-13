@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>dakle-Ranking</title>
+  <meta name="description" content="Upiši svaki tjedan do kojeg si grada stigao/la – što dalje, to više bodova.">
+  <meta name="theme-color" content="#1e40af">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="dakle-Ranking">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="32" height="32">
+      <span>dakle-Ranking</span>
+    </div>
+    <button type="button" class="sync-chip" id="syncStatus" aria-live="polite"></button>
+    <div class="auth" id="authArea"></div>
+  </header>
+
+  <main class="layout">
+    <section class="card board" aria-labelledby="boardTitle">
+      <div class="board-head">
+        <h1 id="boardTitle">Etape</h1>
+        <div class="board-tools">
+          <label class="select-label">
+            <span>Profil</span>
+            <select id="viewUser"></select>
+          </label>
+          <button type="button" class="btn" id="manageCitiesBtn" hidden>Uredi gradove</button>
+        </div>
+      </div>
+      <nav class="week-pager" aria-label="Odabir tjedna">
+        <button type="button" class="icon-btn big" id="prevWeek" aria-label="Prethodni tjedan">&#8249;</button>
+        <div class="week-info">
+          <strong id="weekLabel">–</strong>
+          <span id="weekRange"></span>
+        </div>
+        <button type="button" class="icon-btn big" id="nextWeek" aria-label="Sljedeći tjedan">&#8250;</button>
+        <button type="button" class="btn today-btn" id="todayBtn" title="Skoči na trenutni tjedan">📅 Trenutni tjedan</button>
+      </nav>
+      <p class="hint" id="boardHint"></p>
+      <div class="grid-wrap" id="gridWrap">
+        <table class="grid" id="grid"></table>
+      </div>
+      <p class="week-total" id="weekTotal"></p>
+      <div class="empty" id="emptyState" hidden></div>
+    </section>
+
+    <aside class="card ranking" aria-labelledby="rankTitle">
+      <div class="ranking-head">
+        <h2 id="rankTitle">Poredak 2026.</h2>
+      </div>
+      <table class="rank-table">
+        <thead>
+          <tr><th>#</th><th>Ime</th><th class="num">Dani</th><th class="num">Bodovi</th></tr>
+        </thead>
+        <tbody id="rankBody"></tbody>
+      </table>
+      <p class="hint small">Za svaki dan dobiva se 1&nbsp;bod po kilometru dosegnutog grada. Svi dani se zbrajaju.</p>
+    </aside>
+  </main>
+
+  <!-- Izradi profil -->
+  <dialog id="registerDialog">
+    <form method="dialog" id="registerForm" class="dialog-form">
+      <button type="button" class="dialog-x" data-close aria-label="Zatvori" title="Zatvori">&times;</button>
+      <h2>Izradi profil</h2>
+      <label>Ime<input name="name" maxlength="30" required autocomplete="nickname"></label>
+      <label>PIN (4–8 znamenki)<input name="pin" type="password" inputmode="numeric" pattern="\d{4,8}" required autocomplete="new-password"></label>
+      <label>Ponovi PIN<input name="pin2" type="password" inputmode="numeric" pattern="\d{4,8}" required autocomplete="new-password"></label>
+      <fieldset class="color-field">
+        <legend>Boja <small>(svaku boju može imati samo jedan korisnik)</small></legend>
+        <div class="swatches" data-swatches></div>
+        <input type="hidden" name="color">
+      </fieldset>
+      <p class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" data-close>Odustani</button>
+        <button type="submit" class="btn primary">Izradi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Prijava -->
+  <dialog id="loginDialog">
+    <form method="dialog" id="loginForm" class="dialog-form">
+      <button type="button" class="dialog-x" data-close aria-label="Zatvori" title="Zatvori">&times;</button>
+      <h2>Prijava</h2>
+      <label>Profil<select name="userId" required></select></label>
+      <label>PIN<input name="pin" type="password" inputmode="numeric" required autocomplete="current-password"></label>
+      <p class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" data-close>Odustani</button>
+        <button type="submit" class="btn primary">Prijavi se</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Uredi gradove -->
+  <dialog id="citiesDialog" class="wide">
+    <div class="dialog-form">
+      <button type="button" class="dialog-x" data-close aria-label="Zatvori" title="Zatvori">&times;</button>
+      <h2>Gradovi (zajednički za sve)</h2>
+      <p class="hint">Kao administrator određuješ rutu za sve korisnike: gradove s udaljenošću od starta. Automatski se slažu od najbližeg do najudaljenijeg.</p>
+      <form id="addCityForm" class="city-add">
+        <input name="name" placeholder="Grad" maxlength="40" required>
+        <input name="km" placeholder="km" inputmode="decimal" required>
+        <button type="submit" class="btn primary">Dodaj</button>
+      </form>
+      <p class="form-error" id="cityError" aria-live="polite"></p>
+      <ul class="city-list" id="cityList"></ul>
+      <div class="dialog-actions">
+        <button type="button" class="btn primary" data-close>Gotovo</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Moj profil -->
+  <dialog id="profileDialog">
+    <form method="dialog" id="profileForm" class="dialog-form">
+      <button type="button" class="dialog-x" data-close aria-label="Zatvori" title="Zatvori">&times;</button>
+      <h2>Moj profil</h2>
+      <label>Ime<input name="name" maxlength="30" required></label>
+      <fieldset class="color-field">
+        <legend>Boja <small>(svaku boju može imati samo jedan korisnik)</small></legend>
+        <div class="swatches" data-swatches></div>
+        <input type="hidden" name="color">
+      </fieldset>
+      <p class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions spread">
+        <button type="button" class="btn danger" id="deleteProfileBtn">Obriši profil</button>
+        <span>
+          <button type="button" class="btn ghost" id="logoutBtn">Odjava</button>
+          <button type="submit" class="btn primary">Spremi</button>
+        </span>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
