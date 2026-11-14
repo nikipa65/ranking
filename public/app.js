@@ -244,7 +244,7 @@ function validateCity(name, kmRaw, exceptId) {
   if (!n) throw new Error('Polje „Grad“ je obavezno');
   if (n.length > 40) throw new Error('Polje „Grad“ smije imati najviše 40 znakova');
   const km = Number(String(kmRaw).replace(',', '.'));
-  if (!Number.isFinite(km) || km <= 0 || km > 100000) throw new Error('Kilometri moraju biti broj između 0 i 100000');
+  if (!Number.isFinite(km) || km < 0 || km > 100000) throw new Error('Kilometri moraju biti broj između 0 i 100000');
   if (!isAdmin()) throw new Error('Gradove može uređivati samo administrator');
   const cities = allCities();
   if (cities.some((c) => c.id !== exceptId && c.name.toLowerCase() === n.toLowerCase())) throw new Error('Taj grad je već dodan');
@@ -304,7 +304,7 @@ async function sync() {
   state.syncing = true;
   renderSync();
 
-  const sent = state.me && state.token ? [...outbox.values()] : [];
+  const sent = state.me && state.token && !state.me.mustChangePin ? [...outbox.values()] : [];
   const rejected = [];
   try {
     const headers = { 'Content-Type': 'application/json' };
@@ -320,6 +320,7 @@ async function sync() {
     const data = await res.json();
 
     applyServerData(data);
+    if (state.me && state.token) setMustChangePin(!!data.mustChangePin);
     for (const r of data.results || []) {
       const was = sent.find((c) => c.key === r.key);
       const cur = outbox.get(r.key);
@@ -384,7 +385,7 @@ function applyServerData(data) {
 function refreshMe() {
   const me = state.me && store.users[state.me.id];
   if (me && !outbox.has('profile')) {
-    state.me = { id: me.id, name: me.name, color: me.color };
+    state.me = { id: me.id, name: me.name, color: me.color, mustChangePin: !!state.me.mustChangePin };
     saveJson(LS.me, state.me);
   }
 }
@@ -868,6 +869,34 @@ function renderCityList() {
   );
 }
 
+/** Merker "Start-PIN muss noch geändert werden" setzen und ggf. Dialog öffnen. */
+function setMustChangePin(value) {
+  if (!state.me || !!state.me.mustChangePin === value) {
+    if (value && !$('#pinDialog').open) openPinDialog(true);
+    return;
+  }
+  state.me = { ...state.me, mustChangePin: value };
+  saveJson(LS.me, state.me);
+  if (value && !$('#pinDialog').open) openPinDialog(true);
+}
+
+/** PIN-Dialog: forced = nach Anmeldung mit der Start-PIN (nicht abbrechbar). */
+function openPinDialog(forced) {
+  const d = $('#pinDialog');
+  const f = $('#pinForm');
+  f.reset();
+  $('.form-error', f).textContent = '';
+  $('#pinCurrentWrap').hidden = forced;
+  f.currentPin.required = !forced;
+  $('.dialog-x', d).hidden = forced;
+  $('h2', d).textContent = forced ? 'Postavi svoj PIN' : 'Promijeni PIN';
+  $('#pinHint').textContent = forced
+    ? 'Prijavio/la si se početnim PIN-om. Prije nastavka odaberi svoj osobni PIN (4–8 znamenki).'
+    : 'Unesi trenutni PIN i odaberi novi.';
+  if (!d.open) d.showModal();
+  (forced ? f.newPin : f.currentPin).focus();
+}
+
 function bindDialogs() {
   document.querySelectorAll('dialog [data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
 
@@ -903,14 +932,18 @@ function bindDialogs() {
     ev.preventDefault();
     const f = ev.target;
     try {
-      const { token, user } = await api('POST', '/api/login', { userId: f.userId.value, pin: f.pin.value });
-      setSession(token, user);
+      const { token, user, mustChangePin } = await api('POST', '/api/login', { userId: f.userId.value, pin: f.pin.value });
+      setSession(token, { ...user, mustChangePin: !!mustChangePin });
       state.viewUserId = user.id;
       localStorage.setItem(LS.view, user.id);
       f.closest('dialog').close();
       renderAll();
-      sync();
-      toast(`Bok, ${user.name}!`);
+      if (mustChangePin) {
+        openPinDialog(true);
+      } else {
+        sync();
+        toast(`Bok, ${user.name}!`);
+      }
     } catch (e) {
       $('.form-error', f).textContent = e.message;
     }
@@ -926,6 +959,40 @@ function bindDialogs() {
       toast('Profil je spremljen');
     } catch (e) {
       $('.form-error', f).textContent = e.message;
+    }
+  });
+
+  $('#changePinBtn').addEventListener('click', () => {
+    $('#profileDialog').close();
+    openPinDialog(false);
+  });
+
+  // Im Pflicht-Modus lässt sich der PIN-Dialog nicht wegklicken (Esc)
+  $('#pinDialog').addEventListener('cancel', (ev) => {
+    if (state.me?.mustChangePin) ev.preventDefault();
+  });
+
+  $('#pinForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = ev.target;
+    const err = $('.form-error', f);
+    const forced = !!state.me?.mustChangePin;
+    if (!/^[0-9]{4,8}$/.test(f.newPin.value)) {
+      err.textContent = 'PIN mora imati 4 do 8 znamenki';
+      return;
+    }
+    if (f.newPin.value !== f.newPin2.value) {
+      err.textContent = 'PIN-ovi se ne podudaraju';
+      return;
+    }
+    try {
+      await api('POST', '/api/pin', { currentPin: forced ? undefined : f.currentPin.value, newPin: f.newPin.value });
+      setMustChangePin(false);
+      f.closest('dialog').close();
+      toast(forced ? `Dobro došli, ${state.me.name}! PIN je postavljen.` : 'PIN je promijenjen');
+      sync();
+    } catch (e) {
+      err.textContent = e.message;
     }
   });
 

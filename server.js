@@ -23,8 +23,11 @@ const crypto = require('crypto');
 const PORT = Number(process.env.PORT) || 3000;
 const YEAR = Number(process.env.YEAR) || 2026; // Wettbewerbsjahr
 const TIMEZONE = (process.env.TIMEZONE || 'Europe/Zagreb').trim(); // bestimmt, welcher Tag "heute" ist
+// Gemeinsame Start-PIN für die Profile aus bootstrap.json (nur als Umgebungsvariable, nie im Repo).
+const START_PIN = (process.env.START_PIN || '').trim();
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
+const BOOTSTRAP_FILE = path.join(ROOT, 'bootstrap.json');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const DATABASE_URL = (process.env.DATABASE_URL || '').trim();
@@ -266,9 +269,11 @@ function currentUser(req) {
   return activeUsers().find((u) => u.id === db.sessions[token]) || null;
 }
 
-function requireUser(req) {
+function requireUser(req, { allowPinChange = false } = {}) {
   const user = currentUser(req);
   if (!user) throw new HttpError(401, 'Najprije se prijavi');
+  // Wer noch die Start-PIN hat, darf erst nach dem Setzen einer eigenen PIN etwas ändern.
+  if (user.mustChangePin && !allowPinChange) throw new HttpError(403, 'Najprije postavi svoj novi PIN');
   return user;
 }
 
@@ -287,7 +292,7 @@ function cleanPin(value) {
 
 function cleanKm(value) {
   const n = Number(String(value).replace(',', '.'));
-  if (!Number.isFinite(n) || n <= 0 || n > 100000) {
+  if (!Number.isFinite(n) || n < 0 || n > 100000) {
     throw new HttpError(400, 'Kilometri moraju biti broj između 0 i 100000');
   }
   return Math.round(n * 10) / 10;
@@ -452,7 +457,8 @@ async function handleApi(req, res, url) {
       }
       if (dirty) await saveDb();
     }
-    return sendJson(res, 200, syncResponse(since, { results }));
+    const me = currentUser(req);
+    return sendJson(res, 200, syncResponse(since, { results, mustChangePin: !!me?.mustChangePin }));
   }
 
   // Profil anlegen (nur online)
@@ -483,7 +489,7 @@ async function handleApi(req, res, url) {
     if (!user || !checkPin(user, String(body.pin ?? ''))) throw new HttpError(401, 'Pogrešan profil ili PIN');
     const token = createSession(user.id);
     await saveDb();
-    return sendJson(res, 200, { token, user: publicUser(user) });
+    return sendJson(res, 200, { token, user: publicUser(user), mustChangePin: !!user.mustChangePin });
   }
 
   if (route === 'POST /logout') {
@@ -497,7 +503,26 @@ async function handleApi(req, res, url) {
 
   if (route === 'GET /me') {
     const user = currentUser(req);
-    return sendJson(res, 200, { user: user ? publicUser(user) : null });
+    return sendJson(res, 200, { user: user ? publicUser(user) : null, mustChangePin: !!user?.mustChangePin });
+  }
+
+  // Eigene PIN ändern (Pflicht nach Anmeldung mit der Start-PIN)
+  if (route === 'POST /pin') {
+    const user = requireUser(req, { allowPinChange: true });
+    const body = await readBody(req);
+    if (!user.mustChangePin && !checkPin(user, String(body.currentPin ?? ''))) {
+      throw new HttpError(401, 'Trenutni PIN nije točan');
+    }
+    const pin = cleanPin(body.newPin);
+    if (checkPin(user, pin)) throw new HttpError(400, 'Novi PIN mora se razlikovati od dosadašnjeg');
+    user.salt = crypto.randomBytes(16).toString('hex');
+    user.pinHash = hashPin(pin, user.salt);
+    user.mustChangePin = false;
+    // andere Sitzungen dieses Profils beenden, die aktuelle bleibt
+    const current = bearer(req);
+    for (const [t, uid] of Object.entries(db.sessions)) if (uid === user.id && t !== current) delete db.sessions[t];
+    await saveDb();
+    return sendJson(res, 200, { ok: true });
   }
 
   // Profil inkl. aller Daten löschen (nur online)
@@ -593,7 +618,51 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+/**
+ * Erstbefüllung einer LEEREN Datenbank aus bootstrap.json:
+ * Profile mit der gemeinsamen START_PIN (müssen beim ersten Anmelden geändert werden)
+ * und die Städte-Route. Läuft nur, wenn noch kein Profil existiert.
+ */
+async function bootstrap() {
+  if (activeUsers().length > 0) return;
+  let config;
+  try {
+    config = JSON.parse(fs.readFileSync(BOOTSTRAP_FILE, 'utf8'));
+  } catch {
+    return;
+  }
+  if (!START_PIN) {
+    console.log('bootstrap.json postoji, ali START_PIN nije postavljen – profili nisu izrađeni.');
+    return;
+  }
+  const pin = cleanPin(START_PIN);
+  const now = Date.now();
+  // Admin zuerst anlegen -> ältestes Profil
+  const names = (config.users || []).slice().sort((a, b) => (b === config.admin) - (a === config.admin));
+  names.forEach((name, i) => {
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.users.push(touch({
+      id: newId(),
+      name: cleanName(name, 30, 'Ime'),
+      color: PALETTE.find((c) => !colorTaken(c)),
+      salt,
+      pinHash: hashPin(pin, salt),
+      mustChangePin: true,
+      createdAt: new Date(now + i).toISOString(),
+      updatedAt: now,
+    }));
+  });
+  if (!db.cities.some((c) => !c.deleted)) {
+    for (const [name, km] of config.cities || []) {
+      db.cities.push(touch({ id: newId(), name: cleanName(name, 40, 'Grad'), km: cleanKm(km), deleted: false, updatedAt: now }));
+    }
+  }
+  await saveDb();
+  console.log(`Početni podaci: ${names.length} profila, ${(config.cities || []).length} gradova (admin: ${adminUser()?.name}).`);
+}
+
 initStorage()
+  .then(bootstrap)
   .then(() => {
     server.listen(PORT, () => {
       console.log(`dakle-Ranking radi na http://localhost:${PORT} (godina ${YEAR})`);

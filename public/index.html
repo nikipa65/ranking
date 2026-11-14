@@ -133,12 +133,29 @@
         <input type="hidden" name="color">
       </fieldset>
       <p class="form-error" aria-live="polite"></p>
+      <button type="button" class="btn ghost" id="changePinBtn">Promijeni PIN</button>
       <div class="dialog-actions spread">
         <button type="button" class="btn danger" id="deleteProfileBtn">Obriši profil</button>
         <span>
           <button type="button" class="btn ghost" id="logoutBtn">Odjava</button>
           <button type="submit" class="btn primary">Spremi</button>
         </span>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Neuen PIN setzen (Pflicht nach Anmeldung mit der Start-PIN) -->
+  <dialog id="pinDialog">
+    <form id="pinForm" class="dialog-form">
+      <button type="button" class="dialog-x" data-close aria-label="Zatvori" title="Zatvori">&times;</button>
+      <h2>Postavi svoj PIN</h2>
+      <p class="hint" id="pinHint"></p>
+      <label id="pinCurrentWrap">Trenutni PIN<input name="currentPin" type="password" inputmode="numeric" autocomplete="current-password"></label>
+      <label>Novi PIN (4–8 znamenki)<input name="newPin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" required autocomplete="new-password"></label>
+      <label>Ponovi novi PIN<input name="newPin2" type="password" inputmode="numeric" pattern="[0-9]{4,8}" required autocomplete="new-password"></label>
+      <p class="form-error" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="submit" class="btn primary">Spremi PIN</button>
       </div>
     </form>
   </dialog>

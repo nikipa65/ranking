@@ -26,6 +26,10 @@ services:
         value: data-dr
       - key: MONGODB_COLLECTION
         value: data-dr
+      # Gemeinsame Start-PIN (4–8 Ziffern) für die Profile aus bootstrap.json.
+      # Wird nur bei leerer Datenbank verwendet; jeder muss sie beim ersten Anmelden ändern.
+      - key: START_PIN
+        sync: false
       # Optional: Name des Profils, das die Städte bearbeiten darf (leer = ältestes Profil).
       - key: ADMIN
         sync: false
