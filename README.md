@@ -30,30 +30,35 @@ npm install
 npm start
 ```
 
-Zatim u pregledniku otvori <http://localhost:3000>. Bez `DATABASE_URL` podaci se spremaju lokalno u `data/db.json`. Postavke putem varijabli okruženja:
+Zatim u pregledniku otvori <http://localhost:3000>. Bez baze podaci se spremaju lokalno u `data/db.json`. Postavke putem varijabli okruženja:
 
-| Varijabla      | Zadano     | Značenje                              |
-|----------------|------------|---------------------------------------|
-| `PORT`         | `3000`     | HTTP port                             |
-| `DATABASE_URL` | prazno     | Postgres adresa (npr. Neon); ako je postavljena, svi podaci se trajno spremaju u bazu |
-| `DATA_DIR`     | `./data`   | mapa za `db.json` (samo bez `DATABASE_URL`) |
-| `YEAR`         | `2026`     | godina natjecanja (u aplikaciji: konstanta `YEAR` u `public/app.js`) |
-| `ADMIN`        | prazno     | ime profila koji uređuje gradove; prazno = najstariji profil |
+| Varijabla            | Zadano     | Značenje                              |
+|----------------------|------------|---------------------------------------|
+| `PORT`               | `3000`     | HTTP port                             |
+| `MONGODB_URI`        | prazno     | MongoDB Atlas adresa; ako je postavljena, svi podaci se trajno spremaju u MongoDB |
+| `MONGODB_DB`         | `data-dr`  | baza u MongoDB-u                      |
+| `MONGODB_COLLECTION` | `data-dr`  | kolekcija; svi podaci su u jednom dokumentu s `_id: "dakle-ranking"` |
+| `DATABASE_URL`       | prazno     | alternativa: Postgres adresa (npr. Neon), tablica `dakle_state` |
+| `DATA_DIR`           | `./data`   | mapa za `db.json` (samo bez baze)     |
+| `YEAR`               | `2026`     | godina natjecanja (u aplikaciji: konstanta `YEAR` u `public/app.js`) |
+| `ADMIN`              | prazno     | ime profila koji uređuje gradove; prazno = najstariji profil |
 
-## Objavljivanje: Render (besplatno) + Neon (besplatna baza)
+## Objavljivanje: Render (besplatno) + MongoDB Atlas (besplatno)
 
-Render u besplatnom planu briše datotečni sustav pri svakom ponovnom pokretanju, zato podaci leže u vanjskoj Postgres bazi.
+Render u besplatnom planu briše datotečni sustav pri svakom ponovnom pokretanju, zato podaci leže u MongoDB Atlasu.
 
-1. **Baza (Neon):** na <https://neon.tech> otvori besplatan račun → *New Project* (regija npr. *Frankfurt / eu-central-1*) → kopiraj *Connection string* (`postgresql://…?sslmode=require`). Tablicu `dakle_state` poslužitelj izrađuje sam.
-2. **Kod na GitHub:** ovaj repozitorij gurni na GitHub (grana `main`).
-3. **Render:** na <https://render.com> → *New → Blueprint* → odaberi repozitorij. Render čita `render.yaml` i pita za:
-   - `DATABASE_URL` → zalijepi Neon connection string,
+1. **MongoDB Atlas:**
+   - *Database Access*: korisnik s pravom čitanja i pisanja.
+   - *Network Access*: dodaj `0.0.0.0/0` (*Allow access from anywhere*) – Render u besplatnom planu nema stalnu IP adresu.
+   - *Connect → Drivers → Node.js*: kopiraj adresu `mongodb+srv://…` i u njoj zamijeni `<db_password>` lozinkom.
+2. **Render:** <https://render.com> → *New → Blueprint* → odaberi repozitorij `ranking`. Render čita `render.yaml` i pita za:
+   - `MONGODB_URI` → zalijepi adresu iz Atlasa,
    - `ADMIN` → (neobavezno) ime profila koji smije uređivati gradove.
-4. Nakon izgradnje aplikacija je dostupna na `https://dakle-ranking.onrender.com` (ili sličnoj adresi). Tu adresu podijeli s ostalima i instaliraj kao aplikaciju.
+3. Nakon izgradnje aplikacija je dostupna na `https://dakle-ranking.onrender.com` (ili sličnoj adresi). `…/health` pokazuje `"storage":"mongodb"` kada je baza spojena.
 
 Napomene:
 - Besplatni Render servis „zaspi” nakon ~15 minuta bez prometa; prvo buđenje traje do oko minute. Aplikacija se ipak otvara odmah iz predmemorije uređaja, a unosi se sinkroniziraju čim se poslužitelj probudi.
-- Svaka druga Postgres baza (npr. Supabase) također radi – dovoljno je postaviti `DATABASE_URL`. Supabase besplatne projekte pauzira nakon tjedan dana bez korištenja, Neon ne.
+- Umjesto MongoDB-a može se koristiti i Postgres (npr. Neon) – postavi `DATABASE_URL` umjesto `MONGODB_URI`.
 - Pri prvom pokretanju s bazom poslužitelj preuzima postojeći `data/db.json`, ako postoji.
 - Nakon promjene datoteka u `public/` povećaj `VERSION` u `public/sw.js`, kako bi instalirane aplikacije dobile novu verziju.
 
@@ -66,7 +71,7 @@ Za instalaciju na drugim uređajima aplikacija mora biti dostupna preko **HTTPS-
 
 ```
 ranking/
-├── server.js              # Node poslužitelj: statične datoteke + JSON API, pohrana u Postgres ili data/db.json
+├── server.js              # Node poslužitelj: statične datoteke + JSON API, pohrana u MongoDB, Postgres ili data/db.json
 ├── render.yaml            # nacrt za Render (New → Blueprint)
 ├── package.json
 ├── public/                # PWA

@@ -9,10 +9,11 @@
 // Konflikte (gleicher Datensatz auf zwei Geräten geändert) löst "last write wins"
 // anhand des Zeitstempels der Änderung (updatedAt).
 //
-// Speicherung: Ist DATABASE_URL gesetzt (z. B. kostenlose Neon-/Supabase-
-// Postgres-Datenbank), liegt der komplette Datenstand dauerhaft in Postgres –
-// nötig auf Hostern wie Render (Free), deren Dateisystem bei jedem Neustart
-// gelöscht wird. Ohne DATABASE_URL wird lokal in data/db.json gespeichert.
+// Speicherung (nötig auf Hostern wie Render Free, deren Dateisystem bei jedem
+// Neustart gelöscht wird):
+//   MONGODB_URI gesetzt  -> MongoDB Atlas (ein Dokument in Datenbank/Collection "data-dr")
+//   DATABASE_URL gesetzt -> Postgres (z. B. Neon, Tabelle dakle_state)
+//   sonst                -> lokale Datei data/db.json
 
 const http = require('http');
 const fs = require('fs');
@@ -26,6 +27,10 @@ const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const DATABASE_URL = (process.env.DATABASE_URL || '').trim();
+const MONGODB_URI = (process.env.MONGODB_URI || '').trim();
+const MONGODB_DB = (process.env.MONGODB_DB || 'data-dr').trim();
+const MONGODB_COLLECTION = (process.env.MONGODB_COLLECTION || 'data-dr').trim();
+const MONGO_DOC_ID = 'dakle-ranking'; // der komplette Datenstand liegt in diesem einen Dokument
 
 // ---------------------------------------------------------------------------
 // Datenhaltung
@@ -67,10 +72,29 @@ function entryKey(userId, year, week, day) {
 
 let db = normalizeDb(null);
 let pool = null; // Postgres-Verbindung, falls DATABASE_URL gesetzt
+let mongo = null; // MongoDB-Collection, falls MONGODB_URI gesetzt
 let writeChain = Promise.resolve();
+
+const storageName = () => (mongo ? 'mongodb' : pool ? 'postgres' : 'file');
 
 /** Speicher öffnen und Datenstand laden. */
 async function initStorage() {
+  if (MONGODB_URI) {
+    const { MongoClient } = require('mongodb');
+    const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 20000, appName: 'dakle-ranking' });
+    await client.connect();
+    mongo = client.db(MONGODB_DB).collection(MONGODB_COLLECTION);
+    const doc = await mongo.findOne({ _id: MONGO_DOC_ID });
+    if (doc && doc.state) {
+      db = normalizeDb(doc.state);
+    } else {
+      // Erster Start mit MongoDB: vorhandene lokale Daten übernehmen
+      db = normalizeDb(readFileDb());
+      await saveDb();
+    }
+    console.log(`Pohrana: MongoDB ${MONGODB_DB}/${MONGODB_COLLECTION} (${db.users.length} profila, revizija ${db.rev})`);
+    return;
+  }
   if (!DATABASE_URL) {
     db = normalizeDb(readFileDb());
     console.log(`Pohrana: datoteka ${DB_FILE}`);
@@ -100,6 +124,16 @@ async function initStorage() {
  * wenn genau dieser Stand geschrieben wurde. Schreibvorgänge laufen nacheinander.
  */
 function saveDb() {
+  if (mongo) {
+    const state = JSON.parse(JSON.stringify(db)); // Momentaufnahme dieses Stands
+    const write = writeChain.then(() => mongo.replaceOne(
+      { _id: MONGO_DOC_ID },
+      { _id: MONGO_DOC_ID, app: 'dakle-ranking', updatedAt: new Date(), state },
+      { upsert: true },
+    ));
+    writeChain = write.catch(() => {});
+    return write;
+  }
   if (!pool) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const tmp = DB_FILE + '.tmp';
@@ -534,7 +568,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/health') {
       // für den Health Check des Hosters (Render)
-      return sendJson(res, 200, { ok: true, storage: pool ? 'postgres' : 'file', rev: db.rev });
+      return sendJson(res, 200, { ok: true, storage: storageName(), rev: db.rev });
     }
     if (url.pathname.startsWith('/api/') || url.pathname === '/api') {
       await handleApi(req, res, url);
