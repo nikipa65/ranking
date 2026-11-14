@@ -489,23 +489,6 @@ function renderAuth() {
       el('button', { type: 'button', class: 'btn primary login-btn', onclick: () => openLogin(), disabled: listUsers().length === 0 }, '🔑 Prijava'),
     );
   }
-  renderLoginCta();
-}
-
-/** Gut sichtbare Anmelde-Karte über dem Raster, solange niemand angemeldet ist. */
-function renderLoginCta() {
-  const box = $('#loginCta');
-  const users = listUsers();
-  box.hidden = !!state.me || users.length === 0;
-  if (box.hidden) return;
-  $('#loginCtaUsers').replaceChildren(
-    ...users.map((u) => el('button', {
-      type: 'button',
-      class: 'login-user',
-      title: `Prijava: ${u.name}`,
-      onclick: () => openLogin(u.id),
-    }, avatar(u), el('span', {}, u.name), u.id === store.adminId ? adminChip() : null)),
-  );
 }
 
 function renderSync() {
