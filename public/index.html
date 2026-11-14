@@ -35,6 +35,13 @@
           <button type="button" class="btn" id="manageCitiesBtn" hidden>Uredi gradove</button>
         </div>
       </div>
+      <div class="login-cta" id="loginCta" hidden>
+        <div class="login-cta-text">
+          <strong>Prijavi se</strong>
+          <span>Dodirni svoje ime i unesi PIN kako bi unosio/la svoje etape.</span>
+        </div>
+        <div class="login-cta-users" id="loginCtaUsers"></div>
+      </div>
       <nav class="week-pager" aria-label="Odabir tjedna">
         <button type="button" class="icon-btn big" id="prevWeek" aria-label="Prethodni tjedan">&#8249;</button>
         <div class="week-info">
@@ -65,27 +72,6 @@
       <p class="hint small">Za svaki dan dobiva se 1&nbsp;bod po kilometru dosegnutog grada. Svi dani se zbrajaju.</p>
     </aside>
   </main>
-
-  <!-- Izradi profil -->
-  <dialog id="registerDialog">
-    <form method="dialog" id="registerForm" class="dialog-form">
-      <button type="button" class="dialog-x" data-close aria-label="Zatvori" title="Zatvori">&times;</button>
-      <h2>Izradi profil</h2>
-      <label>Ime<input name="name" maxlength="30" required autocomplete="nickname"></label>
-      <label>PIN (4–8 znamenki)<input name="pin" type="password" inputmode="numeric" pattern="\d{4,8}" required autocomplete="new-password"></label>
-      <label>Ponovi PIN<input name="pin2" type="password" inputmode="numeric" pattern="\d{4,8}" required autocomplete="new-password"></label>
-      <fieldset class="color-field">
-        <legend>Boja <small>(svaku boju može imati samo jedan korisnik)</small></legend>
-        <div class="swatches" data-swatches></div>
-        <input type="hidden" name="color">
-      </fieldset>
-      <p class="form-error" aria-live="polite"></p>
-      <div class="dialog-actions">
-        <button type="button" class="btn ghost" data-close>Odustani</button>
-        <button type="submit" class="btn primary">Izradi</button>
-      </div>
-    </form>
-  </dialog>
 
   <!-- Prijava -->
   <dialog id="loginDialog">

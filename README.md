@@ -6,7 +6,7 @@ Progresivna web-aplikacija (PWA) za izazov po etapama u **2026.** godini:
 - **Vodoravno**: dani u tjednu (Pon–Ned) s datumom, današnji dan je označen. Dani izvan 2026. (29.–31.12.2025. i 1.–3.1.2027.) su zatamnjeni i ne mogu se unositi.
 - **Okomito**: zajednički gradovi, poredani od najbližeg (gore) do najudaljenijeg (dolje).
 - **Trenutni tjedan**: gumb „📅 Trenutni tjedan” jednim klikom vodi na tekući tjedan.
-- **Profili**: početni profili (Marija – administratorica, Andrea, Tonka, Nina, Leo) nastaju iz `bootstrap.json` sa zajedničkim početnim PIN-om; pri prvoj prijavi svatko mora postaviti vlastiti PIN. PIN se kasnije može promijeniti u profilu („Promijeni PIN”). Svaku boju (15 boja) može imati samo jedan korisnik.
+- **Profili**: nema samostalne registracije – početni profili (Marija – administratorica, Andrea, Tonka, Nina, Leo) nastaju iz `bootstrap.json` sa zajedničkim početnim PIN-om; pri prvoj prijavi svatko mora postaviti vlastiti PIN. PIN se kasnije može promijeniti u profilu („Promijeni PIN”). Svaku boju (15 boja) može imati samo jedan korisnik.
 - **Gradovi i kilometri**: jedan zajednički popis za sve. Uređuje ga samo **administrator** – profil naveden u `ADMIN`, inače najstariji profil. Brisanjem grada uklanjaju se i unosi svih korisnika s tim gradom.
 - **Unos**: za današnji ili raniji dan dodirne se grad do kojeg se stiglo (ponovni dodir = brisanje). Budući dani su zatamnjeni i ne mogu se unositi – to provjerava i poslužitelj.
 - **Bodovi**: 1 bod po kilometru dosegnutog grada – što dalje, to više bodova.
@@ -93,9 +93,9 @@ ranking/
 | Metoda  | Putanja        | Opis                                                        |
 |---------|----------------|-------------------------------------------------------------|
 | POST    | `/api/sync`    | sinkronizacija `{since, changes}` → novi podaci od revizije `since` |
-| POST    | `/api/users`   | izradi profil `{name, pin, color}`                          |
 | POST    | `/api/login`   | prijava `{userId, pin}`                                     |
 | POST    | `/api/logout`  | odjava                                                      |
+| POST    | `/api/pin`     | promjena PIN-a `{currentPin, newPin}` (nakon početnog PIN-a bez `currentPin`) |
 | GET     | `/api/me`      | trenutno prijavljeni profil                                 |
 | DELETE  | `/api/me`      | obriši vlastiti profil sa svim podacima                     |
 

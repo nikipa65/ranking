@@ -462,27 +462,7 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, syncResponse(since, { results, me: me ? me.id : null, mustChangePin: !!me?.mustChangePin }));
   }
 
-  // Profil anlegen (nur online)
-  if (route === 'POST /users') {
-    const body = await readBody(req);
-    const name = cleanName(body.name, 30, 'Ime');
-    const pin = cleanPin(body.pin);
-    if (nameTaken(name)) throw new HttpError(409, 'To ime je već zauzeto');
-    let color;
-    if (body.color) {
-      color = cleanColor(body.color);
-    } else {
-      color = PALETTE.find((c) => !colorTaken(c));
-      if (!color) throw new HttpError(409, 'Sve boje su već zauzete');
-    }
-    const salt = crypto.randomBytes(16).toString('hex');
-    const now = Date.now();
-    const user = touch({ id: newId(), name, color, salt, pinHash: hashPin(pin, salt), createdAt: new Date(now).toISOString(), updatedAt: now });
-    db.users.push(user);
-    const token = createSession(user.id);
-    await saveDb();
-    return sendJson(res, 201, { token, user: publicUser(user) });
-  }
+  // Profile werden nur über bootstrap.json angelegt – keine Selbst-Registrierung.
 
   if (route === 'POST /login') {
     const body = await readBody(req);

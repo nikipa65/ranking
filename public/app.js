@@ -486,10 +486,26 @@ function renderAuth() {
     );
   } else {
     area.append(
-      el('button', { type: 'button', class: 'btn ghost', onclick: openLogin, disabled: listUsers().length === 0 }, 'Prijava'),
-      el('button', { type: 'button', class: 'btn primary', onclick: openRegister }, 'Izradi profil'),
+      el('button', { type: 'button', class: 'btn primary login-btn', onclick: () => openLogin(), disabled: listUsers().length === 0 }, '🔑 Prijava'),
     );
   }
+  renderLoginCta();
+}
+
+/** Gut sichtbare Anmelde-Karte über dem Raster, solange niemand angemeldet ist. */
+function renderLoginCta() {
+  const box = $('#loginCta');
+  const users = listUsers();
+  box.hidden = !!state.me || users.length === 0;
+  if (box.hidden) return;
+  $('#loginCtaUsers').replaceChildren(
+    ...users.map((u) => el('button', {
+      type: 'button',
+      class: 'login-user',
+      title: `Prijava: ${u.name}`,
+      onclick: () => openLogin(u.id),
+    }, avatar(u), el('span', {}, u.name), u.id === store.adminId ? adminChip() : null)),
+  );
 }
 
 function renderSync() {
@@ -556,7 +572,7 @@ function renderBoard() {
   if (!user) hint = '';
   else if (own) hint = 'Za današnji ili raniji dan dodirni grad do kojeg si stigao/la. Ponovni dodir briše unos. Budući dani se ne mogu unositi. Radi i bez interneta.';
   else if (state.me) hint = `Gledaš etape korisnika ${user.name}. Gore odaberi svoj profil za unos.`;
-  else hint = 'Izradi profil ili se prijavi kako bi unosio/la svoje etape.';
+  else hint = '';
   $('#boardHint').textContent = hint;
 
   if (!user || cities.length === 0) {
@@ -567,8 +583,7 @@ function renderBoard() {
     empty.replaceChildren();
     if (!user) {
       empty.append(
-        el('p', {}, state.lastSync || state.online ? 'Još nema profila.' : 'Podaci još nisu učitani – potrebna je internetska veza.'),
-        el('button', { type: 'button', class: 'btn primary', onclick: openRegister }, 'Izradi prvi profil'),
+        el('p', {}, state.lastSync || state.online ? 'Profili još nisu postavljeni.' : 'Podaci još nisu učitani – potrebna je internetska veza.'),
       );
     } else if (isAdmin()) {
       empty.append(
@@ -780,20 +795,11 @@ function renderSwatches(form, selected, exceptUserId) {
   );
 }
 
-function openRegister() {
-  const form = $('#registerForm');
-  form.reset();
-  const taken = takenColors(null);
-  renderSwatches(form, PALETTE.find((c) => !taken.has(c)) || '', null);
-  openDialog('#registerDialog');
-  if (!form.color.value) $('.form-error', form).textContent = 'Sve boje su već zauzete.';
-  form.name.focus();
-}
-
-function openLogin() {
+function openLogin(userId) {
   const form = $('#loginForm');
   form.reset();
-  form.userId.replaceChildren(...listUsers().map((u) => el('option', { value: u.id, selected: u.id === state.viewUserId }, u.name)));
+  const selected = userId || state.viewUserId;
+  form.userId.replaceChildren(...listUsers().map((u) => el('option', { value: u.id, selected: u.id === selected }, u.name)));
   openDialog('#loginDialog');
   form.pin.focus();
 }
@@ -901,34 +907,6 @@ function openPinDialog(forced) {
 
 function bindDialogs() {
   document.querySelectorAll('dialog [data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
-
-  $('#registerForm').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const f = ev.target;
-    const err = $('.form-error', f);
-    if (f.pin.value !== f.pin2.value) {
-      err.textContent = 'PIN-ovi se ne podudaraju';
-      return;
-    }
-    if (!f.color.value) {
-      err.textContent = 'Odaberi boju';
-      return;
-    }
-    try {
-      const { token, user } = await api('POST', '/api/users', { name: f.name.value, pin: f.pin.value, color: f.color.value });
-      setSession(token, user);
-      state.viewUserId = user.id;
-      localStorage.setItem(LS.view, user.id);
-      f.closest('dialog').close();
-      renderAll();
-      toast(`Dobro došli, ${user.name}!`);
-      await sync();
-      // Der Admin legt direkt die gemeinsame Strecke an
-      if (isAdmin() && allCities().length === 0) openCities();
-    } catch (e) {
-      err.textContent = e.message;
-    }
-  });
 
   $('#loginForm').addEventListener('submit', async (ev) => {
     ev.preventDefault();
