@@ -458,7 +458,8 @@ async function handleApi(req, res, url) {
       if (dirty) await saveDb();
     }
     const me = currentUser(req);
-    return sendJson(res, 200, syncResponse(since, { results, mustChangePin: !!me?.mustChangePin }));
+    // "me": wer laut Server angemeldet ist (null = Sitzung ungültig/abgelaufen)
+    return sendJson(res, 200, syncResponse(since, { results, me: me ? me.id : null, mustChangePin: !!me?.mustChangePin }));
   }
 
   // Profil anlegen (nur online)

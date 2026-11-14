@@ -4,7 +4,7 @@
 // Die Daten selbst speichert die App lokal und synchronisiert sie selbst –
 // API-Aufrufe laufen daher immer direkt zum Server.
 
-const VERSION = 'dakle-ranking-v10';
+const VERSION = 'dakle-ranking-v11';
 const SHELL = [
   './',
   'index.html',

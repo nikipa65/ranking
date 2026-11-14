@@ -318,6 +318,8 @@ async function sync() {
     if (res.status === 401) throw new AuthLost();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    // Gespeicherte Anmeldung gilt auf dem Server nicht mehr (z. B. Profil gelöscht oder Daten neu angelegt)
+    if (state.token && 'me' in data && data.me !== state.me?.id) throw new AuthLost();
 
     applyServerData(data);
     if (state.me && state.token) setMustChangePin(!!data.mustChangePin);
