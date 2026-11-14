@@ -6,7 +6,9 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "icons": "node scripts/make-icons.js"
+    "icons": "node scripts/make-icons.js",
+    "seed:test": "node scripts/seed-test.js",
+    "seed:remove": "node scripts/seed-test.js --remove"
   },
   "engines": {
     "node": ">=18"

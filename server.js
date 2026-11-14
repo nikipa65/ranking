@@ -22,6 +22,7 @@ const crypto = require('crypto');
 
 const PORT = Number(process.env.PORT) || 3000;
 const YEAR = Number(process.env.YEAR) || 2026; // Wettbewerbsjahr
+const TIMEZONE = (process.env.TIMEZONE || 'Europe/Zagreb').trim(); // bestimmt, welcher Tag "heute" ist
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
@@ -200,6 +201,11 @@ function isoWeeksInYear(year) {
   return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
 }
 
+/** Heutiges Datum (JJJJ-MM-TT) in der Zeitzone der Gruppe. */
+function todayInZone() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
 /** Kalenderdatum (UTC) eines ISO-Wochentags. */
 function isoDate(year, week, day) {
   const jan4 = new Date(Date.UTC(year, 0, 4));
@@ -363,7 +369,10 @@ function applyChange(user, ch) {
     if (year !== YEAR) throw new HttpError(400, `Unosi su mogući samo za ${YEAR}.`);
     if (!Number.isInteger(week) || week < 1 || week > isoWeeksInYear(year)) throw new HttpError(400, 'Neispravan tjedan');
     if (!Number.isInteger(day) || day < 1 || day > 7) throw new HttpError(400, 'Neispravan dan');
-    if (isoDate(year, week, day).getUTCFullYear() !== YEAR) throw new HttpError(400, `Taj dan nije u ${YEAR}.`);
+    const date = isoDate(year, week, day);
+    if (date.getUTCFullYear() !== YEAR) throw new HttpError(400, `Taj dan nije u ${YEAR}.`);
+    // Nur heute oder vergangene Tage – "heute" nach der Zeitzone der Gruppe (TIMEZONE).
+    if (date.toISOString().slice(0, 10) > todayInZone()) throw new HttpError(400, 'Budući dani se ne mogu unositi');
     const id = entryKey(user.id, year, week, day);
     let entry = db.entries.find((e) => e.id === id);
     if (entry && entry.updatedAt > updatedAt) return false;

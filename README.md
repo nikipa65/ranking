@@ -8,7 +8,7 @@ Progresivna web-aplikacija (PWA) za izazov po etapama u **2026.** godini:
 - **Trenutni tjedan**: gumb „📅 Trenutni tjedan” jednim klikom vodi na tekući tjedan.
 - **Profili**: svaka osoba izrađuje vlastiti profil s imenom, PIN-om i bojom. Svaku boju (15 boja) može imati samo jedan korisnik.
 - **Gradovi i kilometri**: jedan zajednički popis za sve. Uređuje ga samo **administrator** – profil naveden u `ADMIN`, inače najstariji profil. Brisanjem grada uklanjaju se i unosi svih korisnika s tim gradom.
-- **Unos**: za svaki dan dodirne se grad do kojeg se stiglo (ponovni dodir = brisanje).
+- **Unos**: za današnji ili raniji dan dodirne se grad do kojeg se stiglo (ponovni dodir = brisanje). Budući dani su zatamnjeni i ne mogu se unositi – to provjerava i poslužitelj.
 - **Bodovi**: 1 bod po kilometru dosegnutog grada – što dalje, to više bodova.
 - **Poredak** (desno): zbroj svih dnevnih bodova po osobi za 2026.
 
@@ -41,7 +41,8 @@ Zatim u pregledniku otvori <http://localhost:3000>. Bez baze podaci se spremaju 
 | `DATABASE_URL`       | prazno     | alternativa: Postgres adresa (npr. Neon), tablica `dakle_state` |
 | `DATA_DIR`           | `./data`   | mapa za `db.json` (samo bez baze)     |
 | `YEAR`               | `2026`     | godina natjecanja (u aplikaciji: konstanta `YEAR` u `public/app.js`) |
-| `ADMIN`              | prazno     | ime profila koji uređuje gradove; prazno = najstariji profil |
+| `ADMIN`              | prazno     | ime profila koji uređuje gradove; prazno = najstariji profil (označen čipom „A”) |
+| `TIMEZONE`           | `Europe/Zagreb` | vremenska zona po kojoj poslužitelj određuje „danas” |
 
 ## Objavljivanje: Render (besplatno) + MongoDB Atlas (besplatno)
 

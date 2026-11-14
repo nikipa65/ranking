@@ -65,6 +65,7 @@ const state = {
   me: loadJson(LS.me, null),
   week: 1,
   pendingDirection: 0,
+  flashToday: false, // heutigen Tag beim nächsten Zeichnen einmal blinken lassen
   viewUserId: localStorage.getItem(LS.view) || null,
   online: navigator.onLine,
   syncing: false,
@@ -156,6 +157,10 @@ function listUsers() {
   }
   return users.sort((a, b) => a.name.localeCompare(b.name, 'hr'));
 }
+
+// Kennzeichnung des Admins: Chip mit "A" (in Auswahllisten, die kein HTML können: Ⓐ)
+const ADMIN_MARK = 'Ⓐ';
+const adminChip = () => el('span', { class: 'admin-chip', title: 'Administrator', 'aria-label': 'Administrator' }, 'A');
 
 /** Der festgelegte Benutzer, der die gemeinsame Städteliste bearbeitet. */
 const isAdmin = () => !!state.me && store.adminId === state.me.id;
@@ -473,7 +478,8 @@ function renderAuth() {
   if (state.me) {
     area.append(
       el('button', { type: 'button', class: 'me-btn', title: 'Moj profil', onclick: openProfile },
-        avatar(state.me), el('span', { class: 'me-name' }, state.me.name)),
+        avatar(state.me), el('span', { class: 'me-name' }, state.me.name),
+        isAdmin() ? adminChip() : null),
     );
   } else {
     area.append(
@@ -525,7 +531,7 @@ function renderViewSelect() {
   const users = listUsers();
   sel.replaceChildren(
     ...users.map((u) => el('option', { value: u.id, selected: u.id === state.viewUserId },
-      u.name + (isMe(u.id) ? ' (ja)' : '') + (u.id === store.adminId ? ' · admin' : ''))),
+      (u.id === store.adminId ? `${ADMIN_MARK} ` : '') + u.name + (isMe(u.id) ? ' (ja)' : ''))),
   );
   sel.disabled = users.length === 0;
   $('#manageCitiesBtn').hidden = !isAdmin();
@@ -545,7 +551,7 @@ function renderBoard() {
 
   let hint = '';
   if (!user) hint = '';
-  else if (own) hint = 'Za svaki dan dodirni grad do kojeg si stigao/la. Ponovni dodir briše unos. Radi i bez interneta.';
+  else if (own) hint = 'Za današnji ili raniji dan dodirni grad do kojeg si stigao/la. Ponovni dodir briše unos. Budući dani se ne mogu unositi. Radi i bez interneta.';
   else if (state.me) hint = `Gledaš etape korisnika ${user.name}. Gore odaberi svoj profil za unos.`;
   else hint = 'Izradi profil ili se prijavi kako bi unosio/la svoje etape.';
   $('#boardHint').textContent = hint;
@@ -578,9 +584,13 @@ function renderBoard() {
 
   const mon = mondayOf(YEAR, state.week);
   const todayStr = new Date().toDateString();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
   const days = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(mon, i);
-    return { day: i + 1, date, isToday: date.toDateString() === todayStr, outside: date.getFullYear() !== YEAR };
+    const outside = date.getFullYear() !== YEAR;
+    const future = !outside && date > todayStart; // Tage in der Zukunft sind gesperrt
+    return { day: i + 1, date, isToday: date.toDateString() === todayStr, outside, future, locked: outside || future };
   });
   const cityIndex = new Map(cities.map((c, i) => [c.id, i]));
   const cityById = new Map(cities.map((c) => [c.id, c]));
@@ -589,9 +599,9 @@ function renderBoard() {
   // Kopfzeile: Wochentage
   const headRow = el('tr', {}, el('th', { class: 'city', scope: 'col' }, 'Grad / km'));
   for (const d of days) {
-    const cls = [d.isToday && 'now', d.outside && 'outside'].filter(Boolean).join(' ') || null;
+    const cls = [d.isToday && 'now', d.outside && 'outside', d.future && 'future'].filter(Boolean).join(' ') || null;
     headRow.append(
-      el('th', { scope: 'col', class: cls, title: `${DAY_LONG[d.day - 1]}, ${fmtDay(d.date)}${d.date.getFullYear()}.${d.outside ? ` (nije u ${YEAR}.)` : ''}` },
+      el('th', { scope: 'col', class: cls, title: `${DAY_LONG[d.day - 1]}, ${fmtDay(d.date)}${d.date.getFullYear()}.${d.outside ? ` (nije u ${YEAR}.)` : d.future ? ' (budući dan)' : ''}` },
         el('span', { class: 'dname' }, DAY_SHORT[d.day - 1]), el('small', {}, fmtDay(d.date))),
     );
   }
@@ -607,12 +617,14 @@ function renderBoard() {
       if (reachedRow !== undefined && row < reachedRow) classes.push('filled');
       if (reachedRow === row) classes.push('reached');
       if (d.isToday) classes.push('now');
+      if (d.isToday && state.flashToday) classes.push('flash');
       if (d.outside) classes.push('outside');
+      if (d.future) classes.push('future');
       const label = `${DAY_LONG[d.day - 1]} ${fmtDay(d.date)}: ${city.name} (${fmtNum(pointsForKm(city.km))} bodova)`;
       const content = reachedRow === row ? '●' : '';
-      const cell = own && !d.outside
+      const cell = own && !d.locked
         ? el('button', { type: 'button', 'aria-label': label, title: label, 'aria-pressed': reachedRow === row ? 'true' : 'false', dataset: { day: d.day, city: city.id } }, content)
-        : el('span', { class: 'cellv', title: d.outside ? `Nije u ${YEAR}.` : label }, content);
+        : el('span', { class: 'cellv', title: d.outside ? `Nije u ${YEAR}.` : d.future ? 'Budući dan – unos još nije moguć' : label }, content);
       tr.append(el('td', { class: classes.join(' ') || null }, cell));
     }
     body.append(tr);
@@ -624,10 +636,11 @@ function renderBoard() {
   for (const d of days) {
     const city = cityById.get(reached.get(d.day));
     if (city) weekPoints += pointsForKm(city.km);
-    footRow.append(el('td', { class: [d.isToday && 'now', d.outside && 'outside'].filter(Boolean).join(' ') || null }, city ? fmtNum(pointsForKm(city.km)) : ''));
+    footRow.append(el('td', { class: [d.isToday && 'now', d.outside && 'outside', d.future && 'future'].filter(Boolean).join(' ') || null }, city ? fmtNum(pointsForKm(city.km)) : ''));
   }
 
   grid.replaceChildren(el('thead', {}, headRow), body, el('tfoot', {}, footRow));
+  state.flashToday = false; // nur einmal pro Aufruf der Woche
   total.replaceChildren('Ukupno ovaj tjedan: ', el('strong', {}, `${fmtNum(weekPoints)} bodova`));
 }
 
@@ -650,7 +663,10 @@ function renderLeaderboard() {
         onclick: () => selectViewUser(r.id),
       },
       el('td', {}, r.points > 0 && r.rank <= 3 ? el('span', { class: 'medal' }, medals[r.rank - 1]) : `${r.rank}.`),
-      el('td', {}, el('span', { class: 'who' }, el('span', { class: 'dot', style: `background:${r.color}` }), el('span', {}, r.name))),
+      el('td', {}, el('span', { class: 'who' },
+        el('span', { class: 'dot', style: `background:${r.color}` }),
+        el('span', {}, r.name),
+        r.id === store.adminId ? adminChip() : null)),
       el('td', { class: 'num' }, r.days),
       el('td', { class: 'num' }, fmtNum(r.points)));
     }),
@@ -691,6 +707,7 @@ function showWeekFromHash() {
     return;
   }
   state.week = week;
+  state.flashToday = true; // Woche neu aufgerufen
   renderWeek();
   renderBoard();
 
@@ -984,15 +1001,7 @@ async function init() {
   $('#nextWeek').addEventListener('click', () => goToWeek(state.week + 1, 1));
   $('#todayBtn').addEventListener('click', () => {
     const w = defaultWeek();
-    if (w === state.week) {
-      // schon da: heutigen Tag kurz hervorheben
-      const wrap = $('#gridWrap');
-      wrap.classList.remove('flash-today');
-      void wrap.offsetWidth;
-      wrap.classList.add('flash-today');
-    } else {
-      goToWeek(w, w > state.week ? 1 : -1);
-    }
+    if (w !== state.week) goToWeek(w, w > state.week ? 1 : -1);
   });
   document.addEventListener('keydown', (e) => {
     if (document.querySelector('dialog[open]') || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -1020,6 +1029,7 @@ async function init() {
   window.addEventListener('hashchange', showWeekFromHash);
 
   state.week = parseHash() || defaultWeek();
+  state.flashToday = true; // erste angezeigte Woche
   history.replaceState(null, '', `#${YEAR}-${state.week}`);
 
   // Sofort aus dem lokalen Speicher anzeigen – auch ohne Internet
