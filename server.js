@@ -467,7 +467,10 @@ async function handleApi(req, res, url) {
   if (route === 'POST /login') {
     const body = await readBody(req);
     const user = activeUsers().find((u) => u.id === body.userId);
-    if (!user || !checkPin(user, String(body.pin ?? ''))) throw new HttpError(401, 'Pogrešan profil ili PIN');
+    if (!user || !checkPin(user, String(body.pin ?? ''))) {
+      console.log(`Neuspješna prijava: ${user ? user.name : 'nepoznat profil'}`);
+      throw new HttpError(401, 'Pogrešan profil ili PIN');
+    }
     const token = createSession(user.id);
     await saveDb();
     return sendJson(res, 200, { token, user: publicUser(user), mustChangePin: !!user.mustChangePin });
@@ -642,8 +645,48 @@ async function bootstrap() {
   console.log(`Početni podaci: ${names.length} profila, ${(config.cities || []).length} gradova (admin: ${adminUser()?.name}).`);
 }
 
+/**
+ * Einmaliger Profil-Reset über die Umgebungsvariable RESET_USERS, z. B. "Marija"
+ * oder mehrere: "Marija, Leo". Zurückgesetzt wird auf START_PIN (muss beim
+ * nächsten Anmelden geändert werden); alle Sitzungen enden, alle Einträge werden
+ * geleert. Jeder Wert wird nur EINMAL angewendet (gemerkt in db.meta) – für einen
+ * weiteren Reset derselben Person einen Zusatz anhängen, z. B. "Marija:2".
+ */
+async function applyResets() {
+  const items = (process.env.RESET_USERS || '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (!items.length) return;
+  if (!START_PIN) {
+    console.log('RESET_USERS je postavljen, ali START_PIN nije – reset nije izvršen.');
+    return;
+  }
+  const pin = cleanPin(START_PIN);
+  db.meta = db.meta || {};
+  db.meta.appliedResets = db.meta.appliedResets || [];
+  const now = Date.now();
+  let changed = false;
+  for (const item of items) {
+    if (db.meta.appliedResets.includes(item)) continue;
+    const name = item.split(':')[0].trim().toLowerCase();
+    const user = activeUsers().find((u) => u.name.toLowerCase() === name);
+    if (!user) {
+      console.log(`Reset: profil "${item}" nije pronađen.`);
+      continue;
+    }
+    user.salt = crypto.randomBytes(16).toString('hex');
+    user.pinHash = hashPin(pin, user.salt);
+    user.mustChangePin = true;
+    for (const [t, uid] of Object.entries(db.sessions)) if (uid === user.id) delete db.sessions[t];
+    for (const e of db.entries) if (e.userId === user.id && e.cityId) touch(Object.assign(e, { cityId: null, updatedAt: now }));
+    db.meta.appliedResets.push(item);
+    changed = true;
+    console.log(`Reset: profil ${user.name} vraćen na početni PIN, unosi obrisani.`);
+  }
+  if (changed) await saveDb();
+}
+
 initStorage()
   .then(bootstrap)
+  .then(applyResets)
   .then(() => {
     server.listen(PORT, () => {
       console.log(`dakle-Ranking radi na http://localhost:${PORT} (godina ${YEAR})`);

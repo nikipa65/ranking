@@ -43,6 +43,7 @@ Zatim u pregledniku otvori <http://localhost:3000>. Bez baze podaci se spremaju 
 | `YEAR`               | `2026`     | godina natjecanja (u aplikaciji: konstanta `YEAR` u `public/app.js`) |
 | `ADMIN`              | prazno     | ime profila koji uređuje gradove; prazno = najstariji profil (označen čipom „A”) |
 | `START_PIN`          | prazno     | zajednički početni PIN (4–8 znamenki) za profile iz `bootstrap.json`; koristi se samo kad baza još nema nijednog profila |
+| `RESET_USERS`        | prazno     | jednokratni reset profila, npr. `Marija` ili `Marija, Leo`: početni PIN (`START_PIN`), sve sesije završavaju, unosi se brišu. Svaka vrijednost se primjenjuje samo jednom; za ponovni reset iste osobe npr. `Marija:2` |
 | `TIMEZONE`           | `Europe/Zagreb` | vremenska zona po kojoj poslužitelj određuje „danas” |
 
 ## Objavljivanje: Render (besplatno) + MongoDB Atlas (besplatno)
