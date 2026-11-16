@@ -1,14 +1,12 @@
 {
   "name": "dakle-ranking",
   "version": "1.0.0",
-  "description": "dakle-Ranking – PWA: tjedne etape po gradovima s poretkom bodova",
+  "description": "dakle-Ranking – PWA: dnevni kilometri po imenu s poretkom",
   "main": "server.js",
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "icons": "node scripts/make-icons.js",
-    "seed:test": "node scripts/seed-test.js",
-    "seed:remove": "node scripts/seed-test.js --remove"
+    "icons": "node scripts/make-icons.js"
   },
   "engines": {
     "node": ">=18"

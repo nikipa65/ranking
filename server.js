@@ -3,10 +3,16 @@
 // dakle-Ranking – kleiner Node-Server.
 // Liefert die PWA aus (Ordner /public) und stellt eine JSON-API bereit.
 //
+// Prinzip: Für jeden Namen werden pro Tag die gefahrenen/gelaufenen Kilometer
+// eingetragen. Es gibt keine Accounts: Jedes Gerät wählt einmal "seinen" Namen
+// und ist danach über eine zufällige Geräte-Kennung daran gebunden. Ein Gerät
+// kann nur die Kilometer seines eigenen Namens eintragen – für heute und
+// vergangene Tage, nie für die Zukunft.
+//
 // Offline-Fähigkeit: Die App speichert alle Daten lokal und schickt Änderungen
 // gesammelt an POST /api/sync. Jeder Datensatz hat eine fortlaufende Server-
 // Revision (rev); Clients holen nur, was seit ihrer letzten Revision neu ist.
-// Konflikte (gleicher Datensatz auf zwei Geräten geändert) löst "last write wins"
+// Konflikte (gleicher Tag auf zwei Geräten geändert) löst "last write wins"
 // anhand des Zeitstempels der Änderung (updatedAt).
 //
 // Speicherung (nötig auf Hostern wie Render Free, deren Dateisystem bei jedem
@@ -23,8 +29,7 @@ const crypto = require('crypto');
 const PORT = Number(process.env.PORT) || 3000;
 const YEAR = Number(process.env.YEAR) || 2026; // Wettbewerbsjahr
 const TIMEZONE = (process.env.TIMEZONE || 'Europe/Zagreb').trim(); // bestimmt, welcher Tag "heute" ist
-// Gemeinsame Start-PIN für die Profile aus bootstrap.json (nur als Umgebungsvariable, nie im Repo).
-const START_PIN = (process.env.START_PIN || '').trim();
+const MAX_KM_PER_DAY = 2000;
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const BOOTSTRAP_FILE = path.join(ROOT, 'bootstrap.json');
@@ -40,7 +45,7 @@ const MONGO_DOC_ID = 'dakle-ranking'; // der komplette Datenstand liegt in diese
 // Datenhaltung
 // ---------------------------------------------------------------------------
 
-const EMPTY_DB = { rev: 0, users: [], sessions: {}, cities: [], entries: [] };
+const EMPTY_DB = { rev: 0, users: [], entries: [], meta: {} };
 
 function readFileDb() {
   try {
@@ -51,27 +56,26 @@ function readFileDb() {
   }
 }
 
-/** Datenstand vervollständigen und ältere Formate nachrüsten. */
+/** Datenstand vervollständigen und ältere Formate (Kalender/Städte/PIN) aufräumen. */
 function normalizeDb(raw) {
   const data = Object.assign(JSON.parse(JSON.stringify(EMPTY_DB)), raw || {});
-  // Ältere Datenstände nachrüsten (Revisionen, Zeitstempel, Tages-Einträge)
   const now = Date.now();
   data.rev = data.rev || 0;
-  for (const list of [data.users, data.cities, data.entries]) {
+  data.meta = data.meta || {};
+  // Aus früheren Versionen: Städte, Sitzungen und Kalender-Einträge werden nicht mehr verwendet
+  delete data.cities;
+  delete data.sessions;
+  data.entries = data.entries.filter((e) => typeof e.date === 'string');
+  for (const u of data.users) {
+    for (const k of ['salt', 'pinHash', 'mustChangePin', 'profileUpdatedAt']) delete u[k];
+  }
+  for (const list of [data.users, data.entries]) {
     for (const r of list) {
       if (!r.rev) r.rev = ++data.rev;
       if (!r.updatedAt) r.updatedAt = now;
     }
   }
-  for (const e of data.entries) {
-    if (!e.day) e.day = 1;
-    if (!e.id) e.id = entryKey(e.userId, e.year, e.week, e.day);
-  }
   return data;
-}
-
-function entryKey(userId, year, week, day) {
-  return `${userId}:${year}:${week}:${day}`;
 }
 
 let db = normalizeDb(null);
@@ -166,57 +170,18 @@ function touch(record) {
 // ---------------------------------------------------------------------------
 
 const newId = () => crypto.randomBytes(8).toString('hex');
-
-function hashPin(pin, salt) {
-  return crypto.scryptSync(String(pin), salt, 32).toString('hex');
-}
-
-function checkPin(user, pin) {
-  const a = Buffer.from(hashPin(pin, user.salt), 'hex');
-  const b = Buffer.from(user.pinHash, 'hex');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
 const activeUsers = () => db.users.filter((u) => !u.deleted);
 
-/**
- * Der festgelegte Benutzer (Admin), der als Einziger die gemeinsame Städteliste
- * bearbeiten darf: Profil mit dem Namen aus ADMIN, sonst das älteste Profil.
- */
-function adminUser() {
-  const users = activeUsers();
-  const wanted = (process.env.ADMIN || '').trim().toLowerCase();
-  if (wanted) {
-    const named = users.find((u) => u.name.toLowerCase() === wanted);
-    if (named) return named;
-  }
-  return users.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))[0] || null;
-}
+/** Öffentliche Sicht auf ein Profil (die Geräte-Kennung selbst bleibt geheim). */
+const publicUser = (u) => (u.deleted
+  ? { id: u.id, deleted: true }
+  : { id: u.id, name: u.name, color: u.color, bound: !!u.deviceHash });
 
-const publicUser = (u) => (u.deleted ? { id: u.id, deleted: true } : { id: u.id, name: u.name, color: u.color });
-
-/** Anzahl ISO-Kalenderwochen eines Jahres (52 oder 53). */
-function isoWeeksInYear(year) {
-  const d = new Date(Date.UTC(year, 11, 28));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-}
-
-/** Heutiges Datum (JJJJ-MM-TT) in der Zeitzone der Gruppe. */
-function todayInZone() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-}
-
-/** Kalenderdatum (UTC) eines ISO-Wochentags. */
-function isoDate(year, week, day) {
-  const jan4 = new Date(Date.UTC(year, 0, 4));
-  const monday = new Date(jan4);
-  monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() || 7) - 1) + (week - 1) * 7);
-  monday.setUTCDate(monday.getUTCDate() + day - 1);
-  return monday;
-}
+// Feste, gut unterscheidbare Farben – jede bekommt nur ein Profil.
+const PALETTE = [
+  '#2563eb', '#dc2626', '#16a34a', '#ea580c', '#7c3aed', '#0891b2', '#db2777', '#65a30d',
+  '#ca8a04', '#475569', '#0d9488', '#92400e', '#4338ca', '#c026d3', '#fb7185',
+];
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -258,61 +223,31 @@ function readBody(req, limit = 20 * 1024) {
   });
 }
 
-function bearer(req) {
-  const auth = req.headers.authorization || '';
-  return auth.startsWith('Bearer ') ? auth.slice(7) : null;
+/** Heutiges Datum (JJJJ-MM-TT) in der Zeitzone der Gruppe. */
+function todayInZone() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 
-function currentUser(req) {
-  const token = bearer(req);
-  if (!token || !db.sessions[token]) return null;
-  return activeUsers().find((u) => u.id === db.sessions[token]) || null;
-}
-
-function requireUser(req, { allowPinChange = false } = {}) {
-  const user = currentUser(req);
-  if (!user) throw new HttpError(401, 'Najprije se prijavi');
-  // Wer noch die Start-PIN hat, darf erst nach dem Setzen einer eigenen PIN etwas ändern.
-  if (user.mustChangePin && !allowPinChange) throw new HttpError(403, 'Najprije postavi svoj novi PIN');
-  return user;
-}
-
-function cleanName(value, max, label) {
-  const s = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
-  if (!s) throw new HttpError(400, `Polje „${label}“ je obavezno`);
-  if (s.length > max) throw new HttpError(400, `Polje „${label}“ smije imati najviše ${max} znakova`);
+/** Prüft ein Datum JJJJ-MM-TT: gültig, im Wettbewerbsjahr, nicht in der Zukunft. */
+function cleanDate(value) {
+  const s = String(value || '');
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  const d = m && new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  if (!d || d.toISOString().slice(0, 10) !== s) throw new HttpError(400, 'Neispravan datum');
+  if (+m[1] !== YEAR) throw new HttpError(400, `Unosi su mogući samo za ${YEAR}.`);
+  if (s > todayInZone()) throw new HttpError(400, 'Budući dani se ne mogu unositi');
   return s;
 }
 
-function cleanPin(value) {
-  const s = String(value ?? '').trim();
-  if (!/^\d{4,8}$/.test(s)) throw new HttpError(400, 'PIN mora imati 4 do 8 znamenki');
-  return s;
-}
-
+/** km: null/leer = Eintrag löschen, sonst Zahl 0–MAX_KM_PER_DAY (eine Nachkommastelle). */
 function cleanKm(value) {
+  if (value === null || value === undefined || value === '') return null;
   const n = Number(String(value).replace(',', '.'));
-  if (!Number.isFinite(n) || n < 0 || n > 100000) {
-    throw new HttpError(400, 'Kilometri moraju biti broj između 0 i 100000');
+  if (!Number.isFinite(n) || n < 0 || n > MAX_KM_PER_DAY) {
+    throw new HttpError(400, `Kilometri moraju biti broj između 0 i ${MAX_KM_PER_DAY}`);
   }
-  return Math.round(n * 10) / 10;
-}
-
-// Feste, gut unterscheidbare Farben – jede darf nur ein Profil haben.
-const PALETTE = [
-  '#2563eb', '#dc2626', '#16a34a', '#ea580c', '#7c3aed', '#0891b2', '#db2777', '#65a30d',
-  '#ca8a04', '#475569', '#0d9488', '#92400e', '#4338ca', '#c026d3', '#fb7185',
-];
-
-function colorTaken(color, exceptId) {
-  return activeUsers().some((u) => u.id !== exceptId && String(u.color).toLowerCase() === color);
-}
-
-function cleanColor(value, exceptId) {
-  const color = String(value || '').toLowerCase();
-  if (!PALETTE.includes(color)) throw new HttpError(400, 'Neispravna boja');
-  if (colorTaken(color, exceptId)) throw new HttpError(409, 'Tu boju već koristi drugi korisnik');
-  return color;
+  const km = Math.round(n * 10) / 10;
+  return km > 0 ? km : null;
 }
 
 function cleanTime(value) {
@@ -321,109 +256,57 @@ function cleanTime(value) {
   return Number.isFinite(t) && t > 0 ? Math.min(t, Date.now() + 60000) : Date.now();
 }
 
-function nameTaken(name, exceptId) {
-  return activeUsers().some((u) => u.id !== exceptId && u.name.toLowerCase() === name.toLowerCase());
+// ---------------------------------------------------------------------------
+// Geräte-Bindung
+// ---------------------------------------------------------------------------
+
+/** Geräte-Kennung aus dem Header (zufällig erzeugt und im Browser gespeichert). */
+function deviceKey(req) {
+  const id = String(req.headers['x-device-id'] || '').trim();
+  return /^[a-f0-9]{32,64}$/.test(id) ? id : null;
 }
 
-function createSession(userId) {
-  const token = crypto.randomBytes(24).toString('hex');
-  db.sessions[token] = userId;
-  return token;
+const hashDevice = (id) => crypto.createHash('sha256').update(id).digest('hex');
+
+/** Profil, an das dieses Gerät gebunden ist (oder null). */
+function deviceUser(req) {
+  const id = deviceKey(req);
+  if (!id) return null;
+  const h = hashDevice(id);
+  return activeUsers().find((u) => u.deviceHash === h) || null;
 }
 
 // ---------------------------------------------------------------------------
 // Synchronisation
 // ---------------------------------------------------------------------------
 
-/** Eine Änderung eines Clients übernehmen. Wirft HttpError bei ungültigen Daten. */
+/** Eine Änderung eines Geräts übernehmen. Wirft HttpError bei ungültigen Daten. */
 function applyChange(user, ch) {
+  if (ch.type !== 'km') throw new HttpError(400, 'Nepoznata promjena');
   const updatedAt = cleanTime(ch.updatedAt);
-
-  if (ch.type === 'city') {
-    // Gemeinsame Städteliste – nur der Admin darf sie ändern
-    if (adminUser()?.id !== user.id) throw new HttpError(403, 'Gradove može uređivati samo administrator');
-    const id = String(ch.id || '');
-    if (!/^[\w-]{6,40}$/.test(id)) throw new HttpError(400, 'Neispravan grad');
-    let city = db.cities.find((c) => c.id === id);
-    if (city && city.updatedAt > updatedAt) return false; // veraltete Änderung
-    if (ch.deleted) {
-      if (!city) return false;
-      Object.assign(city, { deleted: true, updatedAt });
-      touch(city);
-      for (const e of db.entries) {
-        if (e.cityId === id) touch(Object.assign(e, { cityId: null, updatedAt }));
-      }
-      return true;
-    }
-    const name = cleanName(ch.name, 40, 'Grad');
-    const km = cleanKm(ch.km);
-    if (!city) {
-      if (db.cities.filter((c) => !c.deleted).length >= 100) throw new HttpError(400, 'Najviše 100 gradova');
-      city = { id };
-      db.cities.push(city);
-    }
-    Object.assign(city, { name, km, deleted: false, updatedAt });
-    touch(city);
-    return true;
+  const date = cleanDate(ch.date);
+  const km = cleanKm(ch.km);
+  const id = `${user.id}:${date}`;
+  let entry = db.entries.find((e) => e.id === id);
+  if (entry && entry.updatedAt > updatedAt) return false; // veraltete Änderung
+  if (!entry) {
+    if (km === null) return false;
+    entry = { id, userId: user.id, date };
+    db.entries.push(entry);
   }
-
-  if (ch.type === 'entry') {
-    const year = Number(ch.year);
-    const week = Number(ch.week);
-    const day = Number(ch.day);
-    if (year !== YEAR) throw new HttpError(400, `Unosi su mogući samo za ${YEAR}.`);
-    if (!Number.isInteger(week) || week < 1 || week > isoWeeksInYear(year)) throw new HttpError(400, 'Neispravan tjedan');
-    if (!Number.isInteger(day) || day < 1 || day > 7) throw new HttpError(400, 'Neispravan dan');
-    const date = isoDate(year, week, day);
-    if (date.getUTCFullYear() !== YEAR) throw new HttpError(400, `Taj dan nije u ${YEAR}.`);
-    // Nur heute oder vergangene Tage – "heute" nach der Zeitzone der Gruppe (TIMEZONE).
-    if (date.toISOString().slice(0, 10) > todayInZone()) throw new HttpError(400, 'Budući dani se ne mogu unositi');
-    const id = entryKey(user.id, year, week, day);
-    let entry = db.entries.find((e) => e.id === id);
-    if (entry && entry.updatedAt > updatedAt) return false;
-    let cityId = null;
-    if (ch.cityId) {
-      const city = db.cities.find((c) => c.id === ch.cityId && !c.deleted);
-      if (!city) throw new HttpError(404, 'Grad nije pronađen');
-      cityId = city.id;
-    }
-    if (!entry) {
-      if (!cityId) return false;
-      entry = { id, userId: user.id, year, week, day };
-      db.entries.push(entry);
-    }
-    Object.assign(entry, { cityId, updatedAt });
-    touch(entry);
-    return true;
-  }
-
-  if (ch.type === 'profile') {
-    if ((user.profileUpdatedAt || 0) > updatedAt) return false;
-    const name = ch.name !== undefined ? cleanName(ch.name, 30, 'Ime') : user.name;
-    const color = ch.color !== undefined ? cleanColor(ch.color, user.id) : user.color;
-    if (nameTaken(name, user.id)) throw new HttpError(409, 'To ime je već zauzeto');
-    Object.assign(user, { name, color, profileUpdatedAt: updatedAt, updatedAt });
-    touch(user);
-    return true;
-  }
-
-  throw new HttpError(400, 'Nepoznata promjena');
+  Object.assign(entry, { km, updatedAt });
+  touch(entry);
+  return true;
 }
 
 function syncResponse(since, extra = {}) {
-  const pick = (list, fields) => list.filter((r) => r.rev > since).map((r) => {
-    const o = {};
-    for (const f of fields) if (r[f] !== undefined) o[f] = r[f];
-    return o;
-  });
   return {
     year: YEAR,
-    adminId: adminUser()?.id || null,
+    today: todayInZone(),
     rev: db.rev,
     full: since === 0,
     users: db.users.filter((u) => u.rev > since).map(publicUser),
-    cities: pick(db.cities, ['id', 'name', 'km', 'deleted', 'updatedAt']),
-    entries: pick(db.entries, ['id', 'userId', 'year', 'week', 'day', 'cityId', 'updatedAt']),
+    entries: db.entries.filter((e) => e.rev > since).map(({ id, userId, date, km, updatedAt }) => ({ id, userId, date, km, updatedAt })),
     ...extra,
   };
 }
@@ -434,21 +317,21 @@ function syncResponse(since, extra = {}) {
 
 async function handleApi(req, res, url) {
   const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
-  const method = req.method;
-  const route = `${method} /${parts.join('/')}`;
+  const route = `${req.method} /${parts.join('/')}`;
 
-  // Daten abgleichen: lokale Änderungen hochladen, neue Daten herunterladen
+  // Daten abgleichen: eigene Änderungen hochladen, neue Daten herunterladen
   if (route === 'POST /sync') {
     const body = await readBody(req, 2 * 1024 * 1024);
     const since = Number.isInteger(body.since) && body.since >= 0 && body.since <= db.rev ? body.since : 0;
     const changes = Array.isArray(body.changes) ? body.changes.slice(0, 5000) : [];
+    const me = deviceUser(req);
     const results = [];
     if (changes.length) {
-      const user = requireUser(req);
+      if (!me) throw new HttpError(403, 'Ovaj uređaj još nije povezan s imenom');
       let dirty = false;
       for (const ch of changes) {
         try {
-          dirty = applyChange(user, ch) || dirty;
+          dirty = applyChange(me, ch) || dirty;
           results.push({ key: ch.key, ok: true });
         } catch (err) {
           if (!(err instanceof HttpError)) throw err;
@@ -457,70 +340,27 @@ async function handleApi(req, res, url) {
       }
       if (dirty) await saveDb();
     }
-    const me = currentUser(req);
-    // "me": wer laut Server angemeldet ist (null = Sitzung ungültig/abgelaufen)
-    return sendJson(res, 200, syncResponse(since, { results, me: me ? me.id : null, mustChangePin: !!me?.mustChangePin }));
+    // "me": an welchen Namen dieses Gerät gebunden ist (null = an keinen)
+    return sendJson(res, 200, syncResponse(since, { results, me: me ? me.id : null }));
   }
 
-  // Profile werden nur über bootstrap.json angelegt – keine Selbst-Registrierung.
-
-  if (route === 'POST /login') {
+  // Gerät einmalig an einen Namen binden
+  if (route === 'POST /claim') {
+    const id = deviceKey(req);
+    if (!id) throw new HttpError(400, 'Nedostaje oznaka uređaja');
+    const current = deviceUser(req);
+    if (current) throw new HttpError(409, `Ovaj uređaj je već povezan s imenom ${current.name}`);
     const body = await readBody(req);
     const user = activeUsers().find((u) => u.id === body.userId);
-    if (!user || !checkPin(user, String(body.pin ?? ''))) {
-      console.log(`Neuspješna prijava: ${user ? user.name : 'nepoznat profil'}`);
-      throw new HttpError(401, 'Pogrešan profil ili PIN');
-    }
-    const token = createSession(user.id);
-    await saveDb();
-    return sendJson(res, 200, { token, user: publicUser(user), mustChangePin: !!user.mustChangePin });
-  }
-
-  if (route === 'POST /logout') {
-    const token = bearer(req);
-    if (token && db.sessions[token]) {
-      delete db.sessions[token];
-      await saveDb();
-    }
-    return sendJson(res, 200, { ok: true });
-  }
-
-  if (route === 'GET /me') {
-    const user = currentUser(req);
-    return sendJson(res, 200, { user: user ? publicUser(user) : null, mustChangePin: !!user?.mustChangePin });
-  }
-
-  // Eigene PIN ändern (Pflicht nach Anmeldung mit der Start-PIN)
-  if (route === 'POST /pin') {
-    const user = requireUser(req, { allowPinChange: true });
-    const body = await readBody(req);
-    if (!user.mustChangePin && !checkPin(user, String(body.currentPin ?? ''))) {
-      throw new HttpError(401, 'Trenutni PIN nije točan');
-    }
-    const pin = cleanPin(body.newPin);
-    if (checkPin(user, pin)) throw new HttpError(400, 'Novi PIN mora se razlikovati od dosadašnjeg');
-    user.salt = crypto.randomBytes(16).toString('hex');
-    user.pinHash = hashPin(pin, user.salt);
-    user.mustChangePin = false;
-    // andere Sitzungen dieses Profils beenden, die aktuelle bleibt
-    const current = bearer(req);
-    for (const [t, uid] of Object.entries(db.sessions)) if (uid === user.id && t !== current) delete db.sessions[t];
-    await saveDb();
-    return sendJson(res, 200, { ok: true });
-  }
-
-  // Profil inkl. aller Daten löschen (nur online)
-  if (route === 'DELETE /me') {
-    const user = requireUser(req);
-    const now = Date.now();
-    // Die gemeinsame Städteliste bleibt erhalten, nur die eigenen Einträge verschwinden.
-    for (const e of db.entries) if (e.userId === user.id && e.cityId) touch(Object.assign(e, { cityId: null, updatedAt: now }));
-    for (const k of ['name', 'color', 'salt', 'pinHash', 'createdAt', 'profileUpdatedAt']) delete user[k];
-    Object.assign(user, { deleted: true, updatedAt: now });
+    if (!user) throw new HttpError(404, 'Ime nije pronađeno');
+    if (user.deviceHash) throw new HttpError(409, `${user.name} je već povezan/a s drugim uređajem`);
+    user.deviceHash = hashDevice(id);
+    user.boundAt = new Date().toISOString();
+    user.updatedAt = Date.now();
     touch(user);
-    for (const [t, uid] of Object.entries(db.sessions)) if (uid === user.id) delete db.sessions[t];
     await saveDb();
-    return sendJson(res, 200, { ok: true });
+    console.log(`Uređaj povezan s imenom ${user.name}`);
+    return sendJson(res, 200, { user: publicUser(user) });
   }
 
   throw new HttpError(404, 'Nepoznata adresa');
@@ -602,11 +442,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-/**
- * Erstbefüllung einer LEEREN Datenbank aus bootstrap.json:
- * Profile mit der gemeinsamen START_PIN (müssen beim ersten Anmelden geändert werden)
- * und die Städte-Route. Läuft nur, wenn noch kein Profil existiert.
- */
+/** Erstbefüllung einer LEEREN Datenbank mit den Namen aus bootstrap.json. */
 async function bootstrap() {
   if (activeUsers().length > 0) return;
   let config;
@@ -615,52 +451,28 @@ async function bootstrap() {
   } catch {
     return;
   }
-  if (!START_PIN) {
-    console.log('bootstrap.json postoji, ali START_PIN nije postavljen – profili nisu izrađeni.');
-    return;
-  }
-  const pin = cleanPin(START_PIN);
   const now = Date.now();
-  // Admin zuerst anlegen -> ältestes Profil
-  const names = (config.users || []).slice().sort((a, b) => (b === config.admin) - (a === config.admin));
-  names.forEach((name, i) => {
-    const salt = crypto.randomBytes(16).toString('hex');
-    db.users.push(touch({
-      id: newId(),
-      name: cleanName(name, 30, 'Ime'),
-      color: PALETTE.find((c) => !colorTaken(c)),
-      salt,
-      pinHash: hashPin(pin, salt),
-      mustChangePin: true,
-      createdAt: new Date(now + i).toISOString(),
-      updatedAt: now,
-    }));
+  const used = new Set();
+  (config.users || []).forEach((raw, i) => {
+    const name = String(raw).trim().slice(0, 30);
+    if (!name) return;
+    const color = PALETTE.find((c) => !used.has(c));
+    used.add(color);
+    db.users.push(touch({ id: newId(), name, color, createdAt: new Date(now + i).toISOString(), updatedAt: now }));
   });
-  if (!db.cities.some((c) => !c.deleted)) {
-    for (const [name, km] of config.cities || []) {
-      db.cities.push(touch({ id: newId(), name: cleanName(name, 40, 'Grad'), km: cleanKm(km), deleted: false, updatedAt: now }));
-    }
-  }
   await saveDb();
-  console.log(`Početni podaci: ${names.length} profila, ${(config.cities || []).length} gradova (admin: ${adminUser()?.name}).`);
+  console.log(`Početni podaci: ${activeUsers().length} imena.`);
 }
 
 /**
- * Einmaliger Profil-Reset über die Umgebungsvariable RESET_USERS, z. B. "Marija"
- * oder mehrere: "Marija, Leo". Zurückgesetzt wird auf START_PIN (muss beim
- * nächsten Anmelden geändert werden); alle Sitzungen enden, alle Einträge werden
- * geleert. Jeder Wert wird nur EINMAL angewendet (gemerkt in db.meta) – für einen
- * weiteren Reset derselben Person einen Zusatz anhängen, z. B. "Marija:2".
+ * Einmaliger Reset über die Umgebungsvariable RESET_USERS, z. B. "Marija" oder
+ * "Marija, Leo": löst die Geräte-Bindung (der Name kann neu gewählt werden) und
+ * löscht alle Kilometer-Einträge. Jeder Wert wird nur EINMAL angewendet (gemerkt
+ * in db.meta) – für einen weiteren Reset derselben Person z. B. "Marija:2".
  */
 async function applyResets() {
   const items = (process.env.RESET_USERS || '').split(',').map((x) => x.trim()).filter(Boolean);
   if (!items.length) return;
-  if (!START_PIN) {
-    console.log('RESET_USERS je postavljen, ali START_PIN nije – reset nije izvršen.');
-    return;
-  }
-  const pin = cleanPin(START_PIN);
-  db.meta = db.meta || {};
   db.meta.appliedResets = db.meta.appliedResets || [];
   const now = Date.now();
   let changed = false;
@@ -669,17 +481,17 @@ async function applyResets() {
     const name = item.split(':')[0].trim().toLowerCase();
     const user = activeUsers().find((u) => u.name.toLowerCase() === name);
     if (!user) {
-      console.log(`Reset: profil "${item}" nije pronađen.`);
+      console.log(`Reset: ime "${item}" nije pronađeno.`);
       continue;
     }
-    user.salt = crypto.randomBytes(16).toString('hex');
-    user.pinHash = hashPin(pin, user.salt);
-    user.mustChangePin = true;
-    for (const [t, uid] of Object.entries(db.sessions)) if (uid === user.id) delete db.sessions[t];
-    for (const e of db.entries) if (e.userId === user.id && e.cityId) touch(Object.assign(e, { cityId: null, updatedAt: now }));
+    delete user.deviceHash;
+    delete user.boundAt;
+    user.updatedAt = now;
+    touch(user);
+    for (const e of db.entries) if (e.userId === user.id && e.km) touch(Object.assign(e, { km: null, updatedAt: now }));
     db.meta.appliedResets.push(item);
     changed = true;
-    console.log(`Reset: profil ${user.name} vraćen na početni PIN, unosi obrisani.`);
+    console.log(`Reset: ${user.name} više nije povezan/a s uređajem, unosi obrisani.`);
   }
   if (changed) await saveDb();
 }

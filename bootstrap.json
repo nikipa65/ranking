@@ -1,22 +1,4 @@
 {
-  "_info": "Početni podaci za praznu bazu. Profili dobivaju zajednički početni PIN iz varijable okruženja START_PIN i moraju ga promijeniti pri prvoj prijavi. Udaljenosti su približne cestovne udaljenosti od Vukovara (km) – administrator ih može prilagoditi u aplikaciji.",
-  "admin": "Marija",
-  "users": ["Andrea", "Marija", "Tonka", "Nina", "Leo"],
-  "cities": [
-    ["Vukovar", 0],
-    ["Vinkovci", 20],
-    ["Slavonski Brod", 95],
-    ["Nova Gradiška", 150],
-    ["Novska", 195],
-    ["Kutina", 225],
-    ["Zagreb", 290],
-    ["Karlovac", 345],
-    ["Gospić", 470],
-    ["Zadar", 575],
-    ["Šibenik", 635],
-    ["Split", 700],
-    ["Makarska", 760],
-    ["Ploče", 800],
-    ["Dubrovnik", 890]
-  ]
+  "_info": "Početna imena za praznu bazu. Svaki uređaj jednom odabere svoje ime i nakon toga može unositi samo svoje kilometre.",
+  "users": ["Andrea", "Marija", "Tonka", "Nina", "Leo"]
 }

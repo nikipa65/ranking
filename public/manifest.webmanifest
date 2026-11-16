@@ -1,7 +1,7 @@
 {
   "name": "dakle-Ranking",
   "short_name": "dakle-Ranking",
-  "description": "Upiši svaki tjedan do kojeg si grada stigao/la – što dalje, to više bodova.",
+  "description": "Upiši svaki dan prijeđene kilometre – poredak se zbraja automatski.",
   "lang": "hr",
   "start_url": "./",
   "scope": "./",

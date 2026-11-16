@@ -1,25 +1,19 @@
 # dakle-Ranking
 
-Progresivna web-aplikacija (PWA) za izazov po etapama u **2026.** godini:
+Progresivna web-aplikacija (PWA) za zajednički izazov u **2026.** godini: svatko upisuje koliko je kilometara prešao, a poredak se zbraja automatski.
 
-- **Tjedni kao stranice**: svaki tjedan 2026. (1.–53., ISO) ima vlastitu stranicu (`#2026-46`); listanje strelicama, tipkovnicom (← →) ili povlačenjem prsta.
-- **Vodoravno**: dani u tjednu (Pon–Ned) s datumom, današnji dan je označen. Dani izvan 2026. (29.–31.12.2025. i 1.–3.1.2027.) su zatamnjeni i ne mogu se unositi.
-- **Okomito**: zajednički gradovi, poredani od najbližeg (gore) do najudaljenijeg (dolje).
-- **Trenutni tjedan**: gumb „📅 Trenutni tjedan” jednim klikom vodi na tekući tjedan.
-- **Profili**: nema samostalne registracije – početni profili (Marija – administratorica, Andrea, Tonka, Nina, Leo) nastaju iz `bootstrap.json` sa zajedničkim početnim PIN-om; pri prvoj prijavi svatko mora postaviti vlastiti PIN. PIN se kasnije može promijeniti u profilu („Promijeni PIN”). Svaku boju (15 boja) može imati samo jedan korisnik.
-- **Gradovi i kilometri**: jedan zajednički popis za sve. Uređuje ga samo **administrator** – profil naveden u `ADMIN`, inače najstariji profil. Brisanjem grada uklanjaju se i unosi svih korisnika s tim gradom.
-- **Unos**: za današnji ili raniji dan dodirne se grad do kojeg se stiglo (ponovni dodir = brisanje). Budući dani su zatamnjeni i ne mogu se unositi – to provjerava i poslužitelj.
-- **Bodovi**: 1 bod po kilometru dosegnutog grada – što dalje, to više bodova.
-- **Poredak** (desno): zbroj svih dnevnih bodova po osobi za 2026.
+- **Dan kao stranica**: gore je datum s ◀ ▶ (svaki dan ima vlastitu adresu, npr. `#2026-11-16`); listanje i tipkovnicom (← →) ili povlačenjem prsta. Gumb „📅 Danas” vodi na današnji dan.
+- **Unos**: ispod datuma je svako ime s poljem „km” i gumbom ✓. Kilometri se mogu upisati za **današnji ili raniji dan** i naknadno ispraviti; budući dani se mogu pogledati, ali ne i uređivati (provjerava i poslužitelj). Prazno polje + ✓ briše unos.
+- **Bez prijave**: nema korisničkih računa ni PIN-ova. Svaki uređaj jednom odabere svoje ime („Tko si ti?”) i od tada je trajno povezan s njim putem nasumične oznake uređaja. Na uređaju se mogu mijenjati samo vlastiti kilometri; ime povezano s jednim uređajem ne može odabrati drugi uređaj.
+- **Poredak** (desno): 1 bod po kilometru, zbroj svih dana; kod istog broja bodova abecedno.
 
 ## Rad bez interneta i sinkronizacija
 
-- Svi podaci spremaju se lokalno na uređaju. Gradovi, unosi i promjene profila rade **i bez interneta**.
-- Promjene čekaju u redu i šalju se poslužitelju čim je veza dostupna: **automatski svake 2 minute**, nekoliko sekundi nakon svake promjene, pri ponovnom spajanju na mrežu i pri povratku u aplikaciju.
-- Istovremeno se preuzimaju promjene drugih korisnika, pa svi s različitih mjesta vide isti poredak.
+- Svi podaci spremaju se lokalno na uređaju; unos kilometara radi **i bez interneta**.
+- Promjene čekaju u redu i šalju se poslužitelju: **automatski svake 2 minute**, nekoliko sekundi nakon svake promjene, pri ponovnom spajanju na mrežu i pri povratku u aplikaciju.
+- Istovremeno se preuzimaju unosi ostalih, pa svi vide isti poredak.
 - Status u zaglavlju pokazuje stanje (Sinkronizirano / Izvan mreže / broj promjena na čekanju); klik pokreće sinkronizaciju odmah.
-- Ako se isti podatak promijeni na dva uređaja, vrijedi kasnija promjena („last write wins”).
-- Samo **izrada profila, prijava i brisanje profila** zahtijevaju internetsku vezu.
+- Samo **odabir imena** (prvo povezivanje uređaja) zahtijeva internetsku vezu.
 
 ## Pokretanje
 
@@ -41,10 +35,10 @@ Zatim u pregledniku otvori <http://localhost:3000>. Bez baze podaci se spremaju 
 | `DATABASE_URL`       | prazno     | alternativa: Postgres adresa (npr. Neon), tablica `dakle_state` |
 | `DATA_DIR`           | `./data`   | mapa za `db.json` (samo bez baze)     |
 | `YEAR`               | `2026`     | godina natjecanja (u aplikaciji: konstanta `YEAR` u `public/app.js`) |
-| `ADMIN`              | prazno     | ime profila koji uređuje gradove; prazno = najstariji profil (označen čipom „A”) |
-| `START_PIN`          | prazno     | zajednički početni PIN (4–8 znamenki) za profile iz `bootstrap.json`; koristi se samo kad baza još nema nijednog profila |
-| `RESET_USERS`        | prazno     | jednokratni reset profila, npr. `Marija` ili `Marija, Leo`: početni PIN (`START_PIN`), sve sesije završavaju, unosi se brišu. Svaka vrijednost se primjenjuje samo jednom; za ponovni reset iste osobe npr. `Marija:2` |
 | `TIMEZONE`           | `Europe/Zagreb` | vremenska zona po kojoj poslužitelj određuje „danas” |
+| `RESET_USERS`        | prazno     | jednokratni reset, npr. `Marija` ili `Marija, Leo`: ime više nije povezano s uređajem (može se ponovno odabrati), svi kilometri te osobe se brišu. Svaka vrijednost se primjenjuje samo jednom; za ponovni reset iste osobe npr. `Marija:2` |
+
+Imena za praznu bazu nalaze se u `bootstrap.json`.
 
 ## Objavljivanje: Render (besplatno) + MongoDB Atlas (besplatno)
 
@@ -54,17 +48,12 @@ Render u besplatnom planu briše datotečni sustav pri svakom ponovnom pokretanj
    - *Database Access*: korisnik s pravom čitanja i pisanja.
    - *Network Access*: dodaj `0.0.0.0/0` (*Allow access from anywhere*) – Render u besplatnom planu nema stalnu IP adresu.
    - *Connect → Drivers → Node.js*: kopiraj adresu `mongodb+srv://…` i u njoj zamijeni `<db_password>` lozinkom.
-2. **Render:** <https://render.com> → *New → Blueprint* → odaberi repozitorij `ranking`. Render čita `render.yaml` i pita za:
-   - `MONGODB_URI` → zalijepi adresu iz Atlasa,
-   - `START_PIN` → zajednički početni PIN za Mariju, Andreu, Tonku, Ninu i Lea,
-   - `ADMIN` → (neobavezno) ime profila koji smije uređivati gradove.
-3. Nakon izgradnje aplikacija je dostupna na `https://dakle-ranking.onrender.com` (ili sličnoj adresi). `…/health` pokazuje `"storage":"mongodb"` kada je baza spojena.
+2. **Render:** <https://render.com> → *New → Blueprint* → odaberi repozitorij `ranking` i kod `MONGODB_URI` zalijepi adresu iz Atlasa.
+3. `…/health` pokazuje `"storage":"mongodb"` kada je baza spojena.
 
 Napomene:
 - Besplatni Render servis „zaspi” nakon ~15 minuta bez prometa; prvo buđenje traje do oko minute. Aplikacija se ipak otvara odmah iz predmemorije uređaja, a unosi se sinkroniziraju čim se poslužitelj probudi.
 - Umjesto MongoDB-a može se koristiti i Postgres (npr. Neon) – postavi `DATABASE_URL` umjesto `MONGODB_URI`.
-- Pri prvom pokretanju s bazom poslužitelj preuzima postojeći `data/db.json`, ako postoji.
-- Je li baza prazna (nema profila) i postavljen `START_PIN`, poslužitelj izrađuje profile i rutu Vukovar–Dubrovnik iz `bootstrap.json`. Bez `MONGODB_URI` to bi se na Renderu ponavljalo nakon svakog ponovnog pokretanja – zato je baza obavezna.
 - Nakon promjene datoteka u `public/` povećaj `VERSION` u `public/sw.js`, kako bi instalirane aplikacije dobile novu verziju.
 
 ## Instalacija kao aplikacija
@@ -72,17 +61,20 @@ Napomene:
 PWA se instalira putem „Dodaj na početni zaslon” (iOS/Android) ili ikone za instalaciju u Chromeu/Edgeu.
 Za instalaciju na drugim uređajima aplikacija mora biti dostupna preko **HTTPS-a** (Render to daje automatski). Lokalno radi `http://localhost`.
 
+Povezivanje s imenom vrijedi za preglednik na tom uređaju. U drugom pregledniku ili nakon brisanja podataka preglednika uređaj je „nov” – tada pomaže `RESET_USERS`.
+
 ## Struktura
 
 ```
 ranking/
 ├── server.js              # Node poslužitelj: statične datoteke + JSON API, pohrana u MongoDB, Postgres ili data/db.json
+├── bootstrap.json         # početna imena
 ├── render.yaml            # nacrt za Render (New → Blueprint)
 ├── package.json
 ├── public/                # PWA
 │   ├── index.html
 │   ├── style.css
-│   ├── app.js             # lokalna pohrana, red promjena, sinkronizacija, tablica, poredak
+│   ├── app.js             # lokalna pohrana, red promjena, sinkronizacija, unos km, poredak
 │   ├── sw.js              # service worker (aplikacija radi i offline)
 │   ├── manifest.webmanifest
 │   └── icons/             # ikone aplikacije (SVG + PNG)
@@ -91,23 +83,12 @@ ranking/
 
 ## API (kratki pregled)
 
-| Metoda  | Putanja        | Opis                                                        |
-|---------|----------------|-------------------------------------------------------------|
-| POST    | `/api/sync`    | sinkronizacija `{since, changes}` → novi podaci od revizije `since` |
-| POST    | `/api/login`   | prijava `{userId, pin}`                                     |
-| POST    | `/api/logout`  | odjava                                                      |
-| POST    | `/api/pin`     | promjena PIN-a `{currentPin, newPin}` (nakon početnog PIN-a bez `currentPin`) |
-| GET     | `/api/me`      | trenutno prijavljeni profil                                 |
-| DELETE  | `/api/me`      | obriši vlastiti profil sa svim podacima                     |
+Svi zahtjevi šalju zaglavlje `X-Device-Id` (nasumična oznaka uređaja, 32 heksadecimalna znaka).
 
-Vrste promjena u `changes` (svaka s `key` i `updatedAt`):
+| Metoda  | Putanja       | Opis                                                        |
+|---------|---------------|-------------------------------------------------------------|
+| POST    | `/api/sync`   | sinkronizacija `{since, changes}` → novi podaci od revizije `since` i `me` (ime povezano s uređajem) |
+| POST    | `/api/claim`  | jednokratno povezivanje uređaja s imenom `{userId}`         |
+| GET     | `/health`     | stanje poslužitelja i vrsta pohrane                         |
 
-- `{type: "city", id, name, km}` ili `{type: "city", id, deleted: true}` – samo administrator
-- `{type: "entry", year, week, day, cityId}` (`day` 1–7 = Pon–Ned, `cityId: null` briše)
-- `{type: "profile", name, color}`
-
-Slanje promjena zahtijeva zaglavlje `Authorization: Bearer <token>` dobiveno prijavom ili izradom profila.
-
-## Prilagodba bodova
-
-Pravilo bodovanja nalazi se u `pointsForKm()` u `public/app.js`. Zadano: `Math.round(km)`.
+Promjena u `changes`: `{key, type: "km", date: "2026-11-16", km, updatedAt}` – `km: null` briše unos. Dopušteno samo za ime povezano s uređajem, za 2026. i ne za budući dan.
