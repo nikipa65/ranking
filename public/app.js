@@ -343,7 +343,8 @@ function renderAll() {
   renderDay();
   renderList();
   renderLeaderboard();
-  if ($('#claimDialog').open) renderClaimList();
+  // Namensliste aktualisieren (z. B. wenn jemand anderes inzwischen einen Namen gewählt hat)
+  if ($('#claimDialog').open && claimStep.mode === 'choose') renderClaim();
 }
 
 function renderMe() {
@@ -489,9 +490,12 @@ function renderLeaderboard() {
 // Name wählen (einmalig pro Gerät)
 // ---------------------------------------------------------------------------
 
+// Ablauf im Dialog: Namen wählen -> bestätigen -> Erfolgsmeldung
+const claimStep = { mode: 'choose', user: null, busy: false };
+
 function openClaim() {
-  $('.form-error', $('#claimDialog')).textContent = '';
-  renderClaimList();
+  Object.assign(claimStep, { mode: 'choose', user: null, busy: false });
+  renderClaim();
   if (!$('#claimDialog').open) $('#claimDialog').showModal();
 }
 
@@ -502,25 +506,71 @@ function offerClaim() {
   openClaim();
 }
 
-function renderClaimList() {
-  $('#claimList').replaceChildren(...listUsers().map((u) => el('button', {
-    type: 'button',
-    class: 'claim-user',
-    disabled: u.bound,
-    title: u.bound ? 'Već povezano s drugim uređajem' : `Ja sam ${u.name}`,
-    onclick: () => claim(u),
-  }, avatar(u), el('span', {}, u.name), u.bound ? el('small', {}, 'povezano') : null)));
+function renderClaim() {
+  const d = $('#claimDialog');
+  const body = $('#claimBody');
+  const error = $('.form-error', d);
+  const { mode, user } = claimStep;
+  error.textContent = '';
+
+  if (mode === 'choose') {
+    $('#claimTitle').textContent = 'Tko si ti?';
+    body.replaceChildren(
+      el('p', { class: 'hint' }, 'Odaberi svoje ime. Na ovom uređaju tada možeš unositi samo svoje kilometre.'),
+      el('div', { class: 'claim-list' }, ...listUsers().map((u) => el('button', {
+        type: 'button',
+        class: 'claim-user',
+        disabled: u.bound,
+        title: u.bound ? 'Već povezano s drugim uređajem' : `Ja sam ${u.name}`,
+        onclick: () => {
+          Object.assign(claimStep, { mode: 'confirm', user: u });
+          renderClaim();
+        },
+      }, el('span', { class: 'avatar sm', style: `background:${u.color}` }, initials(u.name)), el('span', {}, u.name),
+      u.bound ? el('small', {}, 'zauzeto') : null))),
+    );
+    return;
+  }
+
+  if (mode === 'confirm') {
+    $('#claimTitle').textContent = 'Potvrda';
+    const yes = el('button', { type: 'button', class: 'btn primary', disabled: claimStep.busy, onclick: () => claim(user) },
+      claimStep.busy ? 'Povezivanje…' : 'Da, to sam ja');
+    body.replaceChildren(el('div', { class: 'claim-confirm' },
+      avatar(user),
+      el('strong', {}, `Jesi li ti ${user.name}?`),
+      el('p', {}, 'Ovaj uređaj se trajno povezuje s tim imenom. To se kasnije ne može promijeniti.'),
+      el('div', { class: 'claim-actions' },
+        el('button', { type: 'button', class: 'btn', disabled: claimStep.busy, onclick: () => { claimStep.mode = 'choose'; renderClaim(); } }, 'Natrag'),
+        yes)));
+    yes.focus();
+    return;
+  }
+
+  // mode === 'done'
+  $('#claimTitle').textContent = 'Povezano';
+  const ok = el('button', { type: 'button', class: 'btn primary', onclick: () => d.close() }, 'U redu');
+  body.replaceChildren(el('div', { class: 'claim-confirm claim-done' },
+    el('span', { class: 'check-big' }, '✓'),
+    el('strong', {}, `Bok, ${user.name}!`),
+    el('p', {}, 'Ovaj uređaj je sada povezan s tvojim imenom. Možeš unositi svoje kilometre.'),
+    el('div', { class: 'claim-actions' }, ok)));
+  ok.focus();
 }
 
 async function claim(user) {
-  if (!confirm(`Povezati ovaj uređaj s imenom „${user.name}“?\n\nTo se kasnije ne može promijeniti.`)) return;
+  claimStep.busy = true;
+  renderClaim();
   try {
     await api('POST', '/api/claim', { userId: user.id });
     setMe(user.id);
-    $('#claimDialog').close();
-    toast(`Bok, ${user.name}! Sada možeš unositi svoje kilometre.`);
-    await sync();
+    Object.assign(claimStep, { mode: 'done', busy: false });
+    renderClaim();
+    renderAll();
+    sync();
   } catch (err) {
+    Object.assign(claimStep, { mode: 'choose', busy: false });
+    renderClaim();
     $('.form-error', $('#claimDialog')).textContent = err.message;
     sync();
   }
@@ -637,6 +687,17 @@ function init() {
   }, 10 * 60 * 1000);
 
   if ('serviceWorker' in navigator) {
+    // Kommt eine neue App-Version an, übernimmt der neue Service Worker sofort –
+    // dann einmal neu laden, damit sie direkt sichtbar ist (nicht erst beim nächsten Öffnen).
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloading) return;
+      const editing = document.activeElement && document.activeElement.tagName === 'INPUT';
+      if (editing) return; // keine laufende Eingabe unterbrechen
+      reloading = true;
+      location.reload();
+    });
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 }

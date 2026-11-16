@@ -38,7 +38,7 @@ Zatim u pregledniku otvori <http://localhost:3000>. Bez baze podaci se spremaju 
 | `TIMEZONE`           | `Europe/Zagreb` | vremenska zona po kojoj poslužitelj određuje „danas” |
 | `RESET_USERS`        | prazno     | jednokratni reset, npr. `Marija` ili `Marija, Leo`: ime više nije povezano s uređajem (može se ponovno odabrati), svi kilometri te osobe se brišu. Svaka vrijednost se primjenjuje samo jednom; za ponovni reset iste osobe npr. `Marija:2` |
 
-Imena za praznu bazu nalaze se u `bootstrap.json`.
+Imena sudionika nalaze se u `bootstrap.json`: pri pokretanju poslužitelj dodaje svako ime koje još ne postoji (postojeća imena, povezivanja i kilometri ostaju nepromijenjeni).
 
 ## Objavljivanje: Render (besplatno) + MongoDB Atlas (besplatno)
 

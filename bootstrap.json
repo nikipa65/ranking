@@ -1,4 +1,4 @@
 {
-  "_info": "Početna imena za praznu bazu. Svaki uređaj jednom odabere svoje ime i nakon toga može unositi samo svoje kilometre.",
+  "_info": "Imena sudionika. Poslužitelj pri pokretanju dodaje svako ime koje još ne postoji (postojeća ostaju nepromijenjena). Svaki uređaj jednom odabere svoje ime i nakon toga može unositi samo svoje kilometre.",
   "users": ["Andrea", "Marija", "Tonka", "Nina", "Leo"]
 }

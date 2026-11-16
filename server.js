@@ -444,24 +444,29 @@ const server = http.createServer(async (req, res) => {
 
 /** Erstbefüllung einer LEEREN Datenbank mit den Namen aus bootstrap.json. */
 async function bootstrap() {
-  if (activeUsers().length > 0) return;
   let config;
   try {
     config = JSON.parse(fs.readFileSync(BOOTSTRAP_FILE, 'utf8'));
   } catch {
     return;
   }
+  // Jeden Namen aus bootstrap.json anlegen, der noch fehlt (bestehende bleiben unverändert)
   const now = Date.now();
-  const used = new Set();
+  const existing = new Set(activeUsers().map((u) => u.name.toLowerCase()));
+  const used = new Set(activeUsers().map((u) => String(u.color).toLowerCase()));
+  const added = [];
   (config.users || []).forEach((raw, i) => {
     const name = String(raw).trim().slice(0, 30);
-    if (!name) return;
-    const color = PALETTE.find((c) => !used.has(c));
+    if (!name || existing.has(name.toLowerCase())) return;
+    const color = PALETTE.find((c) => !used.has(c)) || PALETTE[(activeUsers().length + i) % PALETTE.length];
     used.add(color);
+    existing.add(name.toLowerCase());
     db.users.push(touch({ id: newId(), name, color, createdAt: new Date(now + i).toISOString(), updatedAt: now }));
+    added.push(name);
   });
+  if (!added.length) return;
   await saveDb();
-  console.log(`Početni podaci: ${activeUsers().length} imena.`);
+  console.log(`Nova imena iz bootstrap.json: ${added.join(', ')}`);
 }
 
 /**
